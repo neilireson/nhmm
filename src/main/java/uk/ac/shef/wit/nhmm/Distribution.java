@@ -4,14 +4,14 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 
+import static java.lang.Double.isFinite;
 import static java.lang.Double.isNaN;
 import static java.lang.Math.*;
 import static uk.ac.shef.wit.nhmm.Constants.*;
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
 import static uk.ac.shef.wit.nhmm.Data.missing_value;
-import static uk.ac.shef.wit.nhmm.Matrix.find_det;
-import static uk.ac.shef.wit.nhmm.Matrix.find_inv;
-import static uk.ac.shef.wit.nhmm.Simulation.generateBernoulli;
+import static uk.ac.shef.wit.nhmm.Matrix.*;
+import static uk.ac.shef.wit.nhmm.Simulation.*;
 
 public class Distribution {
 
@@ -39,9 +39,9 @@ public class Distribution {
     double[] edge_MI;          // Corresponding mututal information (strength)
     double mdl_beta;          // Exponent modifier for the MDL prior
     double[][] W;               // Weight matrix for the decomposable tree prior
-    Envelope[][] envelope;// Clusters of edges in the dependence tree
+    Envelope[] envelope;     // Clusters of edges in the dependence tree
     int num_envelopes;       // Number of clusters of edges
-    int[] node_used;          // The array indicating whether a node has been already used
+    boolean[] node_used;          // The array indicating whether a node has been already used
     // double[][] sigma
     // double[][] inv_sigma
     double[] first_mu;         // Mean for the first observation in the sequence
@@ -64,7 +64,7 @@ public class Distribution {
     // double[][] sigma -- correlation parameters
     //   with the diagonal for the univariate constraints
     // double det -- normalization constant
-    int is_sim_initialized;  // Indicator whether the burn-off is already performed
+    boolean is_sim_initialized;  // Indicator whether the burn-off is already performed
     int[] last_sim;           // Last simulated entry
     /* Tree structured Gaussian */
     // double[][] mu
@@ -113,18 +113,18 @@ public class Distribution {
     double[][][][] log_un_prob;   // log of unnormalized P(S_nt=i|S_n,t-1=j,X_nt) (for univariate)
 
     /* Powers of 2 from 0 to 30 */
-    static int power2[]={
-            1,2,4,8,
-            16,32,64,128,
-            256,512,1024,2048,
-            4096,8192,16384,32768,
-            65536,131072,262144,524288,
-            1048576,2097152,4194304,8388608,
-            16777216,33554432,67108864,134217728,
-            268435456,536870912,1073741824
+    static int power2[] = {
+            1, 2, 4, 8,
+            16, 32, 64, 128,
+            256, 512, 1024, 2048,
+            4096, 8192, 16384, 32768,
+            65536, 131072, 262144, 524288,
+            1048576, 2097152, 4194304, 8388608,
+            16777216, 33554432, 67108864, 134217728,
+            268435456, 536870912, 1073741824
     };
-    public int SINGULAR_FAIL;
-    public int is_done;
+    public boolean SINGULAR_FAIL;
+    public boolean is_done;
     public int num_failed;
     public double maxent_epsilon;
     public double cg_epsilon;
@@ -142,8 +142,8 @@ public class Distribution {
         /* Initializing parameter structures */
         switch (type) {
             case DIST_FACTOR:
-                subdist = new Distribution[1][][];
-                subdist[0] = new Distribution[dim][];
+                subdist = new Distribution[1][];
+                subdist[0] = new Distribution[dim];
                 for (int i = 0; i < dim; i++)
                     subdist[0][i] = null;
                 break;
@@ -280,7 +280,7 @@ public class Distribution {
 
                 /* Allocating the arrays of edges */
                 /* There can be no more edges than the number of nodes-1 */
-                edge = new int *[dim - 1];
+                edge = new int[dim - 1][];
                 for (int i = 0; i < dim - 1; i++)
                     /* Each edge connects of a pair of nodes */
                     edge[i] = new int[2];
@@ -295,7 +295,7 @@ public class Distribution {
                 }
 
                 /* Allocating array of flags for the nodes */
-                node_used = new int[dim];
+                node_used = new boolean[dim];
 
                 /* Allocating the arrays of edge strengths*/
                 edge_MI = new double[dim - 1];
@@ -339,7 +339,7 @@ public class Distribution {
 
                 /* Initializing the envelopes */
                 num_envelopes = 0;
-                envelope = new Envelope[dim][];
+                envelope = new Envelope[dim];
 
                 break;
             case DIST_CONDCHOWLIU:
@@ -351,7 +351,7 @@ public class Distribution {
                 subdist = null;
 
                 /* Allocating the array of marginal probabilities for each dimension (previous + current) */
-                ind_prob = new double *[2 * dim];
+                ind_prob = new double[2 * dim][];
                 for (int i = 0; i < 2 * dim; i++)
                     ind_prob[i] = new double[num_states];
 
@@ -377,7 +377,7 @@ public class Distribution {
                 }
 
                 /* Allocating array of flags for the nodes */
-                node_used = new int[2 * dim];
+                node_used = new boolean[2 * dim];
 
                 /* Allocating the arrays of edge strengths */
                 edge_MI = new double[dim];
@@ -385,26 +385,26 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     edge_MI[i] = 0.0;
 
-                if (BLAH) {
-                    /* Allocating and initializing weight matrix for the tree prior */
-                    W = new double[2 * dim][];
-                    for (int i = 0; i < 2 * dim; i++)
-                        W[i] = new double[2 * dim];
-                    for (int i = 0; i < 2 * dim; i++)
-                        for (int j = 0; j < 2 * dim; j++)
-                            if (i == j)
-                                W[i][j] = 0.0;
-                            else
-                                W[i][j] = 1.0;
-
-                    /* Allocating and initializing the fictitious counts for the parameter prior */
-                    pcount_uni = new double[2 * dim][];
-                    for (int i = 0; i < 2 * dim; i++) {
-                        pcount_uni[i] = new double[num_states];
-                        for (int j = 0; j < num_states; j++)
-                            pcount_uni[i][j] = 0.0;
-                    }
-                }
+//                if (BLAH) {
+//                    /* Allocating and initializing weight matrix for the tree prior */
+//                    W = new double[2 * dim][];
+//                    for (int i = 0; i < 2 * dim; i++)
+//                        W[i] = new double[2 * dim];
+//                    for (int i = 0; i < 2 * dim; i++)
+//                        for (int j = 0; j < 2 * dim; j++)
+//                            if (i == j)
+//                                W[i][j] = 0.0;
+//                            else
+//                                W[i][j] = 1.0;
+//
+//                    /* Allocating and initializing the fictitious counts for the parameter prior */
+//                    pcount_uni = new double[2 * dim][];
+//                    for (int i = 0; i < 2 * dim; i++) {
+//                        pcount_uni[i] = new double[num_states];
+//                        for (int j = 0; j < num_states; j++)
+//                            pcount_uni[i][j] = 0.0;
+//                    }
+//                }
                 break;
             case DIST_ME_BIVAR:
                 dim_index = new int[dim];
@@ -420,7 +420,7 @@ public class Distribution {
                     for (int i1 = 0; i1 < i + 1; i1++)
                         sigma[i][i1] = 0.0;
                 det = (double) dim * CONST_LN2;
-                is_sim_initialized = 0;
+                is_sim_initialized = false;
                 last_sim = null;
                 break;
             case DIST_BN_ME_BIVAR:
@@ -646,7 +646,7 @@ public class Distribution {
                     edge[i] = new int[2];
 
                 /* Allocating array of flags for the nodes */
-                node_used = new int[dim];
+                node_used = new boolean[dim];
 
                 /* Allocating the array of edge strengths */
                 edge_MI = new double[dim - 1];
@@ -671,7 +671,7 @@ public class Distribution {
                         rho[i][i1] = 0.0;
 
                 /* Posterior univariate probabilities (for updates) */
-                uni_prob = new double ***[1];
+                uni_prob = new double[1][][][];
                 uni_prob[0] = new double[num_states][][];
 
                 joint_prob = null;
@@ -679,11 +679,11 @@ public class Distribution {
                 /* Arrays for storing probability values */
                 log_p_tr = new double[num_states][][][];
                 for (int i = 0; i < num_states; i++)
-                    log_p_tr[i] = new double **[1];
+                    log_p_tr[i] = new double[1][][];
 
                 log_un_prob = new double[num_states][][][];
                 for (int i = 0; i < num_states; i++)
-                    log_un_prob[i] = new double **[1];
+                    log_un_prob[i] = new double[1][][];
 
                 break;
             case DIST_TRANSLOGISTIC:
@@ -709,7 +709,7 @@ public class Distribution {
                         rho[i][i1] = 0.0;
 
                 /* Posterior univariate probabilities (for updates) */
-                uni_prob = new double ***[1];
+                uni_prob = new double[1][][][];
                 uni_prob[0] = new double[num_states][][];
 
                 /* Joint probabilities (for updates) */
@@ -734,7 +734,6 @@ public class Distribution {
 
                 break;
             default:
-                ;
         }
     }
 
@@ -896,7 +895,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++) {
                     for (int j = 0; j < i; j++) {
                         for (int i1 = 0; i1 < num_states; i1++)
-                            pcount_bi[i][j] = null[i1];
+                            pcount_bi[i][j][i1] = null;
                         pcount_bi[i][j] = null;
                     }
                     pcount_bi[i] = null;
@@ -904,7 +903,7 @@ public class Distribution {
                 pcount_bi = null;
 
                 /* Deallocating the envelopes */
-                if (subdist != null)
+                if (envelope != null)
                     for (int i = 0; i < num_envelopes; i++)
                         envelope[i] = null;
                 envelope = null;
@@ -1178,9 +1177,9 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     dist.dim_index[i] = dim_index[i];
                 if (subdist != null) {
-                    dist.subdist = new Distribution * [dim][];
+                    dist.subdist = new Distribution[dim][];
                     for (int i = 0; i < dim; i++) {
-                        dist.subdist[i] = new Distribution[num_states][];
+                        dist.subdist[i] = new Distribution[num_states];
                         for (int j = 0; j < num_states; j++)
                             dist.subdist[i][j] = subdist[i][j].copy();
                     }
@@ -1222,9 +1221,9 @@ public class Distribution {
                 break;
             case DIST_UNICONDMVME:
                 if (subdist != null) {
-                    dist.subdist = new Distribution * [dim][];
+                    dist.subdist = new Distribution[dim][];
                     for (int i = 0; i < dim; i++) {
-                        dist.subdist[i] = new Distribution[num_states][];
+                        dist.subdist[i] = new Distribution[num_states];
                         for (int j = 0; j < num_states; j++)
                             dist.subdist[i][j] = subdist[i][j].copy();
                     }
@@ -1579,19 +1578,19 @@ public class Distribution {
                 break;
             case DIST_BERNOULLI:
                 /* Initializing Bernoulli parameters */
-                if (BLAH) {
-                    sum = 0.0;
-                    for (int i = 0; i < num_states; i++) {
-                        state_prob[i] = Constants.drand48();
-                        sum += state_prob[i];
-                    }
-
-                    /* Renormalizing */
-                    for (int i = 0; i < num_states; i++)
-                        state_prob[i] /= sum;
-                    for (int i = 0; i < num_states; i++)
-                        log_state_prob[i] = log(state_prob[i]);
-                }
+//                if (BLAH) {
+//                    sum = 0.0;
+//                    for (int i = 0; i < num_states; i++) {
+//                        state_prob[i] = Constants.drand48();
+//                        sum += state_prob[i];
+//                    }
+//
+//                    /* Renormalizing */
+//                    for (int i = 0; i < num_states; i++)
+//                        state_prob[i] /= sum;
+//                    for (int i = 0; i < num_states; i++)
+//                        log_state_prob[i] = log(state_prob[i]);
+//                }
                 /* Initializing from the prior */
                 sum = 0.0;
                 /* First, simulating num_states gamma distributed variables */
@@ -1614,31 +1613,31 @@ public class Distribution {
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
                 /* Initializing conditional probabilities */
-                if (BLAH) {
-                    for (int i = 0; i < num_states; i++) {
-                        sum = 0.0;
-                        for (int j = 0; j < num_states; j++) {
-                            cond_state_prob[i][j] = Constants.drand48();
-                            sum += cond_state_prob[i][j];
-                        }
-                        /* Renormalizing */
-                        for (int j = 0; j < num_states; j++)
-                            cond_state_prob[i][j] /= sum;
-                        for (int j = 0; j < num_states; j++)
-                            log_cond_state_prob[i][j] = log(cond_state_prob[i][j]);
-                    }
-                    /* Initializing first sequence entry probabilities */
-                    sum = 0.0;
-                    for (int i = 0; i < num_states; i++) {
-                        state_prob[i] = Constants.drand48();
-                        sum += state_prob[i];
-                    }
-                    /* Renormalizing */
-                    for (int i = 0; i < num_states; i++)
-                        state_prob[i] /= sum;
-                    for (int i = 0; i < num_states; i++)
-                        log_state_prob[i] = log(state_prob[i]);
-                }
+//                if (BLAH) {
+//                    for (int i = 0; i < num_states; i++) {
+//                        sum = 0.0;
+//                        for (int j = 0; j < num_states; j++) {
+//                            cond_state_prob[i][j] = Constants.drand48();
+//                            sum += cond_state_prob[i][j];
+//                        }
+//                        /* Renormalizing */
+//                        for (int j = 0; j < num_states; j++)
+//                            cond_state_prob[i][j] /= sum;
+//                        for (int j = 0; j < num_states; j++)
+//                            log_cond_state_prob[i][j] = log(cond_state_prob[i][j]);
+//                    }
+//                    /* Initializing first sequence entry probabilities */
+//                    sum = 0.0;
+//                    for (int i = 0; i < num_states; i++) {
+//                        state_prob[i] = Constants.drand48();
+//                        sum += state_prob[i];
+//                    }
+//                    /* Renormalizing */
+//                    for (int i = 0; i < num_states; i++)
+//                        state_prob[i] /= sum;
+//                    for (int i = 0; i < num_states; i++)
+//                        log_state_prob[i] = log(state_prob[i]);
+//                }
 
                 /* Initializing from the prior */
 
@@ -1797,22 +1796,22 @@ public class Distribution {
                 W_transition = null;
                 node_visited = null;
                 node_weight = null;
-                if (BLAH) {
-    /* Assuming there are no edges -- need to initialize only
-       marginal probabilities */
-                    num_edges = 0;
-
-                    for (int i = 0; i < dim; i++) {
-                        sum = 0.0;
-                        for (int i1 = 0; i1 < num_states; i1++) {
-                            ind_prob[i][i1] = Constants.drand48();
-                            sum += ind_prob[i][i1];
-                        }
-
-                        for (int i1 = 0; i1 < num_states; i1++)
-                            ind_prob[i][i1] /= sum;
-                    }
-                }
+//                if (BLAH) {
+//    /* Assuming there are no edges -- need to initialize only
+//       marginal probabilities */
+//                    num_edges = 0;
+//
+//                    for (int i = 0; i < dim; i++) {
+//                        sum = 0.0;
+//                        for (int i1 = 0; i1 < num_states; i1++) {
+//                            ind_prob[i][i1] = Constants.drand48();
+//                            sum += ind_prob[i][i1];
+//                        }
+//
+//                        for (int i1 = 0; i1 < num_states; i1++)
+//                            ind_prob[i][i1] /= sum;
+//                    }
+//                }
 
                 if (subdist != null)
                     /* Initializing mixture components */
@@ -1914,16 +1913,16 @@ public class Distribution {
             case DIST_DELTAEXP:
                 /* f(x)=l*exp(-l*x) */
                 /* Initializing mixing probabilities */
-                if (BLAH) {
-                    /* Old initialization */
-                    sum = 0.0;
-                    for (int i = 0; i < num_states; i++) {
-                        mix_prob[i] = Constants.drand48();
-                        sum += mix_prob[i];
-                    }
-                    for (int i = 0; i < num_states; i++)
-                        mix_prob[i] /= sum;
-                }
+//                if (BLAH) {
+//                    /* Old initialization */
+//                    sum = 0.0;
+//                    for (int i = 0; i < num_states; i++) {
+//                        mix_prob[i] = Constants.drand48();
+//                        sum += mix_prob[i];
+//                    }
+//                    for (int i = 0; i < num_states; i++)
+//                        mix_prob[i] /= sum;
+//                }
                 /* Assuming uniform prior on the mixing probabilities */
                 sum = 0.0;
                 /* Simulating mixing probabilities from Dirichlet prior */
@@ -1943,17 +1942,17 @@ public class Distribution {
                 break;
             case DIST_DELTAGAMMA:
                 /* f(x)=x^(param1-1)*exp(-x*param2)*param2^param1/Gamma(param1) */
-                if (BLAH) {
-                    /* Old initialization of the mixing probabilities */
-                    /* Initializing mixing probabilities */
-                    sum = 0.0;
-                    for (int i = 0; i < num_states; i++) {
-                        mix_prob[i] = Constants.drand48();
-                        sum += mix_prob[i];
-                    }
-                    for (int i = 0; i < num_states; i++)
-                        mix_prob[i] /= sum;
-                }
+//                if (BLAH) {
+//                    /* Old initialization of the mixing probabilities */
+//                    /* Initializing mixing probabilities */
+//                    sum = 0.0;
+//                    for (int i = 0; i < num_states; i++) {
+//                        mix_prob[i] = Constants.drand48();
+//                        sum += mix_prob[i];
+//                    }
+//                    for (int i = 0; i < num_states; i++)
+//                        mix_prob[i] /= sum;
+//                }
                 /* Assuming uniform prior on the mixing probabilities */
                 sum = 0.0;
                 /* Simulating mixing probabilities from Dirichlet prior */
@@ -2037,16 +2036,16 @@ public class Distribution {
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j < dim; j++)
                             sigma[i][j] /= (double) (num_entries - 1);
-                    if (BLAH) {
-                        /* !!! Using unit matrix instead !!! */
-                        for (int i = 0; i < dim; i++) {
-                            for (int j = 0; j < i; j++) {
-                                sigma[i][j] = 0.0;
-                                sigma[j][i] = 0.0;
-                            }
-                            sigma[i][i] = 1.0;
-                        }
-                    }
+//                    if (BLAH) {
+//                        /* !!! Using unit matrix instead !!! */
+//                        for (int i = 0; i < dim; i++) {
+//                            for (int j = 0; j < i; j++) {
+//                                sigma[i][j] = 0.0;
+//                                sigma[j][i] = 0.0;
+//                            }
+//                            sigma[i][i] = 1.0;
+//                        }
+//                    }
                 } else { /* !!! Bad initialization !!! */
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j <= i; j++) {
@@ -2061,7 +2060,7 @@ public class Distribution {
 
                 /* Finding inverse and determinant */
                 det = find_det(sigma, dim);
-                if (SINGULAR_FAIL != null)
+                if (SINGULAR_FAIL)
                     /* Data is highly correlated */ {
                     System.err.print("Data is highly correlated -- initialization failed.\n");
                     System.exit(-3);
@@ -2089,13 +2088,14 @@ public class Distribution {
 
 
                 /* Transition */
-                for (int i = 0; i < dim; i++)
+                for (int i = 0; i < dim; i++) {
                     /* !!! Uniformly distributed between -0.2 and 0.2 !!! */
-                    if (BLAH) {
-                        mu[i] = 0.4 * Constants.drand48() - 0.2;
-                    }
-                /* Not going to use it */
-                mu[i] = 0.0;
+//                    if (BLAH) {
+//                        mu[i] = 0.4 * Constants.drand48() - 0.2;
+//                    }
+                    /* Not going to use it */
+                    mu[i] = 0.0;
+                }
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
@@ -2173,7 +2173,7 @@ public class Distribution {
 
                 /* Finding inverse and determinant */
                 det = find_det(sigma, dim);
-                if (SINGULAR_FAIL != null)
+                if (SINGULAR_FAIL)
                     /* Data is highly correlated */ {
                     System.err.print("Data is highly correlated -- initialization failed.\n");
                     System.exit(-3);
@@ -2203,7 +2203,7 @@ public class Distribution {
                             m += data.sequence[n].entry[t].rdata[i1];
                     }
 
-                    m /= (double) num_entries;
+                    m /= num_entries;
 
                     sd = 0.0;
                     for (int n = 0; n < data.num_seqs; n++)
@@ -2257,14 +2257,12 @@ public class Distribution {
                                 m += data.sequence[n].entry[t].rdata[i1];
                         }
 
-                        m /= (double) num_entries;
+                        m /= num_entries;
 
                         sd = 0.0;
                         for (int n = 0; n < data.num_seqs; n++)
-                            for (int t = 0; t < data.sequence[n].seq_length;
-                                 t++)
-                                sd += (m - data.sequence[n].entry[t].rdata[i1]) * (m - data.sequence[n].entry[t]->
-                        rdata[i1]);
+                            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                                sd += (m - data.sequence[n].entry[t].rdata[i1]) * (m - data.sequence[n].entry[t].rdata[i1]);
 
                         sd = sqrt(sd / (double) num_entries);
 
@@ -2279,7 +2277,8 @@ public class Distribution {
                                 rho[i][i1] = 1.0 / rho[i][i1];
                         }
                     } else
-                        rho[i][i1] = generateUnitNormal();
+                        throw new UnsupportedOperationException("FIXME");
+//                        rho[i][i1] = generateUnitNormal();
 
                 } /* Initializing parameters for the linear terms */
 
@@ -2289,15 +2288,12 @@ public class Distribution {
                         subdist[0][i].Initialize(data);
                 break;
             default:
-                ;
         }
-
-        return;
     }
 
     double log_prob(DataPoint datum, DataPoint prev_datum) {
         /* Finding the probability of the datum according to the distribution */
-        double log_p;
+        double log_p = 0.0;
         double n_exp = 0.0;
 
         double[] xminusmu;
@@ -2465,30 +2461,30 @@ public class Distribution {
                             if (envelope[env].node[e + 1] == i2) { /* i1 is the parent of i2 */
                                 /* Scaling P(i2->)/P(i2) */
                                 sum = 0.0;
-                                for (value2 = 0; value2 < num_states; value2++)
+                                for (int value2 = 0; value2 < num_states; value2++)
                                     sum += mult[i2][value2];
-                                for (value2 = 0; value2 < num_states; value2++)
+                                for (int value2 = 0; value2 < num_states; value2++)
                                     mult[i2][value2] /= sum;
                                 log_p += log(sum);
 
-                                for (value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
+                                for (int value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
                                     sum = 0.0;
-                                    for (value2 = 0; value2 < num_states; value2++)
+                                    for (int value2 = 0; value2 < num_states; value2++)
                                         sum += mult[i2][value2] * edge_prob[ei][value1][value2];
                                     mult[i1][value1] *= sum / ind_prob[i1][value1];
                                 } /* Computing the contribution to i1 with value value1 from child i2 */
                             } /* i1 is the parent of i2 */ else { /* i2 is the parent of i1 */
                                 /* Scaling P(i1->)/P(i1) */
                                 sum = 0.0;
-                                for (value1 = 0; value1 < num_states; value1++)
+                                for (int value1 = 0; value1 < num_states; value1++)
                                     sum += mult[i1][value1];
-                                for (value1 = 0; value1 < num_states; value1++)
+                                for (int value1 = 0; value1 < num_states; value1++)
                                     mult[i1][value1] /= sum;
                                 log_p += log(sum);
 
-                                for (value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
+                                for (int value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
                                     sum = 0.0;
-                                    for (value1 = 0; value1 < num_states; value1++)
+                                    for (int value1 = 0; value1 < num_states; value1++)
                                         sum += mult[i1][value1] * edge_prob[ei][value1][value2];
                                     mult[i2][value2] *= sum / ind_prob[i2][value2];
                                 } /* Computing the contribution to i2 with value value2 from child i1 */
@@ -2521,15 +2517,15 @@ public class Distribution {
                 /* Initializing the array of flags */
                 for (int i = 0; i < dim; i++) {
                     /* Current observation nodes */
-                    node_used[i] = 0;
+                    node_used[i] = false;
                     /* Previous observation nodes */
-                    node_used[i + dim] = 1;
+                    node_used[i + dim] = true;
                 }
 
                 log_p = 0.0;
 
                 for (int i = 0; i < num_edges; i++) { /* For each edge */
-
+                    int value1, value2;
                     /* value1 is the value for the first node; value2 is the value for the second node */
                     /* Assuming indices for the current vector are 0..dim-1 and indices for the previous vector are dim..2*dim-1 */
                     if (edge[i][0] < dim)
@@ -2542,7 +2538,7 @@ public class Distribution {
                             value1 = prev_datum.ddata[dim_index[edge[i][0] - dim]];
                         else
                             /* Current vector the first in sequence */
-                            value1 = missing_value((int) 0);
+                            value1 = missing_value(0);
 
                     if (edge[i][1] < dim)
                         /* Current observation vector */
@@ -2573,8 +2569,8 @@ public class Distribution {
                             log_p -= log(ind_prob[edge[i][1]][value2]);
                     }
 
-                    node_used[edge[i][0]] = 1;
-                    node_used[edge[i][1]] = 1;
+                    node_used[edge[i][0]] = true;
+                    node_used[edge[i][1]] = true;
                 } /* For each edge */
 
                 /* Making sure that all nodes have been used */
@@ -2798,7 +2794,7 @@ public class Distribution {
         return (log_p);
     }
 
-    void probLogistic(DataPoint datum, int prev_state, double[]output) {
+    void probLogistic(DataPoint datum, int prev_state, double[] output) {
         /* Calculates the probabilities of all states given the previous state and X */
 
         switch (type) {
@@ -2830,7 +2826,7 @@ public class Distribution {
         return;
     }
 
-    double  log_prior() {
+    double log_prior() {
         /* Log-probability of the prior distribution */
         double lp = 0.0;
 
@@ -2923,7 +2919,7 @@ public class Distribution {
         return (lp);
     }
 
-    double  log_un_probLogistic(DataPoint datum, int cur_state, int prev_state) {
+    double log_un_probLogistic(DataPoint datum, int cur_state, int prev_state) {
         /* Calculates the log of unnormalized probabilities for the current state given the previsous state and X */
 
         double output = 0;
@@ -2978,7 +2974,7 @@ public class Distribution {
                     /* !!! Assuming a one-dimensional multinomial !!! */
                     for (int i = 0; i < num_states; i++) {
                         out.format("%c Mixture component %d:\n", COMMENT_SYMBOL, i + 1);
-                        subdist[0][i].WriteToFile(output);
+                        subdist[0][i].WriteToFile(out);
                     }
                 break;
             case DIST_CONDBERNOULLI:
@@ -3072,7 +3068,7 @@ public class Distribution {
                         for (int j = 0; j < num_states; j++) {
                             out.format("%c Mixture component for variable %d value %d\n",
                                     COMMENT_SYMBOL, i + 1, j);
-                            subdist[i][j].WriteToFile(output);
+                            subdist[i][j].WriteToFile(out);
                         }
                 break;
             case DIST_CONDCHOWLIU:
@@ -3336,7 +3332,7 @@ public class Distribution {
         return;
     }
 
-    void  WriteToFile2(PrintStream out) {
+    void WriteToFile2(PrintStream out) {
         /* Writing distribution to a file WITHOUT dimension indices */
 
         /* Types of distribution are not written -- only the parameters */
@@ -3358,7 +3354,7 @@ public class Distribution {
                     /* !!! Assuming a one-dimensional multinomial !!! */
                     for (int i = 0; i < num_states; i++) {
                         out.format("%c Mixture component %d:\n", COMMENT_SYMBOL, i + 1);
-                        subdist[0][i].WriteToFile2(output);
+                        subdist[0][i].WriteToFile2(out);
                     }
                 break;
             case DIST_CONDBERNOULLI:
@@ -3442,7 +3438,7 @@ public class Distribution {
                         for (int j = 0; j < num_states; j++) {
                             out.format("%c Mixture component for variable %d value %d\n",
                                     COMMENT_SYMBOL, i + 1, j);
-                            subdist[i][j].WriteToFile2(output);
+                            subdist[i][j].WriteToFile2(out);
                         }
                 break;
             case DIST_CONDCHOWLIU:
@@ -3669,7 +3665,7 @@ public class Distribution {
         return;
     }
 
-    void  WriteToFileBare(PrintStream out) {
+    void WriteToFileBare(PrintStream out) {
         /* Writing distribution to a file WITHOUT dimension indices */
 
         /* Types of distribution are not written -- only the parameters */
@@ -3686,7 +3682,7 @@ public class Distribution {
                     /* Mixture components */
                     /* !!! Assuming a one-dimensional multinomial !!! */
                     for (int i = 0; i < num_states; i++)
-                        subdist[0][i].WriteToFileBare(output);
+                        subdist[0][i].WriteToFileBare(out);
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -3742,7 +3738,7 @@ public class Distribution {
                     /* Mixture */
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j < num_states; j++)
-                            subdist[i][j].WriteToFileBare(output);
+                            subdist[i][j].WriteToFileBare(out);
                 break;
             case DIST_CONDCHOWLIU:
                 for (int i = 0; i < 2 * dim; i++) {
@@ -3906,7 +3902,7 @@ public class Distribution {
         return;
     }
 
-    int  num_params() {
+    int num_params() {
         /* Number of free parameters in the distribution */
         int num = 0;
 
@@ -4069,7 +4065,7 @@ public class Distribution {
         return (num);
     }
 
-    void  UpdateEmissionParameters(Data data, double[][]prob_s, double norm_const) {
+    void UpdateEmissionParameters(Data data, double[][] prob_s, double norm_const) {
   /* data -- the output data
      prob_s -- p_old(.|R_nt,X_nt)
      norm_const -- sum_n sum_{t_n} p_old(.|R_nt,X_nt)
@@ -4089,11 +4085,11 @@ public class Distribution {
                 break;
             case DIST_CONDBERNOULLI:
                 /* Univariate conditional Bernoulli */
-                UpdateEmissionConditionalBernoulli(data, prob_s, 0);
+                UpdateEmissionConditionalBernoulli(data, prob_s, false);
                 break;
             case DIST_CONDBERNOULLIG:
                 /* Univariate conditional Bernoulli with averaged first entry probabilities */
-                UpdateEmissionConditionalBernoulli(data, prob_s, 1);
+                UpdateEmissionConditionalBernoulli(data, prob_s, true);
             case DIST_UNICONDMVME:
                 /* Polytomous logistic distribution */
 
@@ -4167,7 +4163,7 @@ public class Distribution {
 
     }
 
-    double  weighted_ll(Data data, double[][]prob_s) {
+    double weighted_ll(Data data, double[][] prob_s) {
   /* The total expected log-likelihood of the data under the distribution
      and the probabilities of the data points */
 
@@ -4184,9 +4180,9 @@ public class Distribution {
         return (ll);
     }
 
-    void  UpdateTransitionParameters(Data data,
-                               Data input,
-                               int iteration) {
+    void UpdateTransitionParameters(Data data,
+                                    Data input,
+                                    int iteration) {
 
         /* Updating the parameters of the input distribution */
 
@@ -4388,9 +4384,9 @@ public class Distribution {
     }
 
     Distribution logistic_gradient(Data input,
-                      double[][][] Anti,
-                      double[][][][]Bntij,
-                      double[][][][]log_un_prob) {
+                                   double[][][] Anti,
+                                   double[][][][] Bntij,
+                                   double[][][][] log_un_prob) {
         /* Calculating the gradient vector for the logistic transition */
 
   /* Variables passed:
@@ -4400,8 +4396,8 @@ public class Distribution {
      log_un_prob -- unnormalized log probabilities of S_nt=i|S_n,t-1=j,X_nt
   */
 
-        Distribution gradient;         // The gradient of the Q function evaluated at the current set of parameters
-        double[][][][]prob;                // Current normalized probabilities of S_nt=i|S_n,t-1=j,X_nt
+        Distribution gradient = null;         // The gradient of the Q function evaluated at the current set of parameters
+        double[][][][] prob;                  // Current normalized probabilities of S_nt=i|S_n,t-1=j,X_nt
 
         /* Temporary variable(s) */
         double sum;
@@ -4419,7 +4415,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) {
                     prob[i] = new double[num_states][][];
                     for (int j = 0; j < num_states; j++) {
-                        prob[i][j] = new double *[input.num_seqs];
+                        prob[i][j] = new double[input.num_seqs][];
                         for (int n = 0; n < input.num_seqs; n++)
                             prob[i][j][n] = new double[input.sequence[n].seq_length];
                     }
@@ -4472,8 +4468,7 @@ public class Distribution {
                             if (t == 0) {
                                 gradient.lambda[i] += (Anti[i][n][t] - prob[i][0][n][t]);
                                 for (int d = 0; d < dim; d++)
-                                    gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n]->
-                                entry[t].rdata[d];
+                                    gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n].entry[t].rdata[d];
                             } else {
                                 temp = 0.0;
                                 for (int j = 0; j < num_states; j++) {
@@ -4481,8 +4476,7 @@ public class Distribution {
                                     temp += Anti[j][n][t - 1] * prob[i][j][n][t];
                                 }
                                 for (int d = 0; d < dim; d++)
-                                    gradient.rho[i][d] += (Anti[i][n][t] - temp) * input.sequence[n].entry[t]->
-                                rdata[d];
+                                    gradient.rho[i][d] += (Anti[i][n][t] - temp) * input.sequence[n].entry[t].rdata[d];
                             }
                         }
                 } /* For each state */
@@ -4491,7 +4485,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) {
                     for (int j = 0; j < num_states; j++) {
                         for (int n = 0; n < input.num_seqs; n++)
-                            prob[i][j] = null[n];
+                            prob[i][j][n] = null;
                         prob[i][j] = null;
                     }
                     prob[i] = null;
@@ -4509,7 +4503,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) {
                     prob[i] = new double[num_states][][];
                     for (int j = 0; j < num_states; j++) {
-                        prob[i][j] = new double *[input.num_seqs];
+                        prob[i][j] = new double[input.num_seqs][];
                         for (int n = 0; n < input.num_seqs; n++)
                             prob[i][j][n] = new double[input.sequence[n].seq_length];
                     }
@@ -4562,8 +4556,7 @@ public class Distribution {
                             if (t == 0) {
                                 gradient.lambda[i] += (Anti[i][n][t] - prob[i][0][n][t]);
                                 for (int d = 0; d < dim; d++)
-                                    gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n]->
-                                entry[t].rdata[d];
+                                    gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n].entry[t].rdata[d];
                             } else {
                                 temp = 0.0;
                                 for (int j = 0; j < num_states; j++) {
@@ -4571,8 +4564,7 @@ public class Distribution {
                                     temp += Anti[j][n][t - 1] * prob[i][j][n][t];
                                 }
                                 for (int d = 0; d < dim; d++)
-                                    gradient.rho[i][d] += (Anti[i][n][t] - temp) * input.sequence[n].entry[t]->
-                                rdata[d];
+                                    gradient.rho[i][d] += (Anti[i][n][t] - temp) * input.sequence[n].entry[t].rdata[d];
                             }
                         }
                 } /* For each state */
@@ -4581,7 +4573,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) {
                     for (int j = 0; j < num_states; j++) {
                         for (int n = 0; n < input.num_seqs; n++)
-                            prob[i][j] = null[n];
+                            prob[i][j][n] = null;
                         prob[i][j] = null;
                     }
                     prob[i] = null;
@@ -4597,7 +4589,7 @@ public class Distribution {
 
                 for (int i = 1; i < num_states; i++) {
                     prob[i] = new double[num_states][][];
-                    prob[i][0] = new double *[input.num_seqs];
+                    prob[i][0] = new double[input.num_seqs][];
                     for (int n = 0; n < input.num_seqs; n++)
                         prob[i][0][n] = new double[input.sequence[n].seq_length];
                 }
@@ -4627,12 +4619,10 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) { /* For each state */
                     /* State 1 is ignored since its parameters are never updated */
                     for (int n = 0; n < input.num_seqs; n++)
-                        for (int t = 0; t < input.sequence[n].seq_length;
-                             t++) {
+                        for (int t = 0; t < input.sequence[n].seq_length; t++) {
                             gradient.lambda[i] += (Anti[i][n][t] - prob[i][0][n][t]);
                             for (int d = 0; d < dim; d++)
-                                gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n].entry[t]->
-                            rdata[d];
+                                gradient.rho[i][d] += (Anti[i][n][t] - prob[i][0][n][t]) * input.sequence[n].entry[t].rdata[d];
                         }
                 } /* For each state */
 
@@ -4647,18 +4637,17 @@ public class Distribution {
 
                 break;
             default:
-                ;
         }
 
-        return (gradient);
+        return gradient;
     }
 
-    void  linear_search_logistic_NR(Data input,
-                              double[][][]Anti,
-                              double[][][][]Bntij,
-                              double[][][][]log_un_prob,
-                              Distribution delta,
-                              int iter) {
+    void linear_search_logistic_NR(Data input,
+                                   double[][][] Anti,
+                                   double[][][][] Bntij,
+                                   double[][][][] log_un_prob,
+                                   Distribution delta,
+                                   int iter) {
         /* Line search method (utilizing Newton Raphson) to find the maximum of the function */
 
   /* Variables passed:
@@ -4670,9 +4659,9 @@ public class Distribution {
      iter -- current iteration of the EM algorithm (if needed)
   */
 
-        double[][][][]adj_fact;            // The adjustment factor (sigma+rho*x) for the direction
+        double[][][][] adj_fact;            // The adjustment factor (sigma+rho*x) for the direction
 
-        double[][][][]prob;                // Current normalized probabilities of S_nt=i|S_n,t-1=j,X_nt
+        double[][][][] prob;                // Current normalized probabilities of S_nt=i|S_n,t-1=j,X_nt
 
         double f;                       // Current value of the function (partial derivative of the log-likelihood)
         double f_prev;                  // Previous value of f
@@ -4684,11 +4673,11 @@ public class Distribution {
         double gamma_prev;              // Previous value of gamma
 
         boolean found_positive = false;
-        double gamma_positive;          // Value of gamma corresponding to the positive f
-        double fneg;
+        double gamma_positive = 0;          // Value of gamma corresponding to the positive f
+        double fneg = 0;
         boolean found_negative = false;
-        double gamma_negative;          // Value of gamma corresponding to the negative f
-        double fpos;
+        double gamma_negative = 0;          // Value of gamma corresponding to the negative f
+        double fpos = 0;
 
         int iteration;                 // Number of iterations
 
@@ -4709,13 +4698,13 @@ public class Distribution {
             switch (type) {
                 case DIST_TRANSLOGISTIC:
                     for (int j = 0; j < num_states; j++) {
-                        adj_fact[i][j] = new double *[input.num_seqs];
+                        adj_fact[i][j] = new double[input.num_seqs][];
                         for (int n = 0; n < input.num_seqs; n++)
                             adj_fact[i][j][n] = new double[input.sequence[n].seq_length];
                     }
                     break;
                 case DIST_LOGISTIC:
-                    adj_fact[i][0] = new double *[input.num_seqs];
+                    adj_fact[i][0] = new double[input.num_seqs][];
                     for (int n = 0; n < input.num_seqs; n++)
                         adj_fact[i][0][n] = new double[input.sequence[n].seq_length];
                     break;
@@ -4730,13 +4719,13 @@ public class Distribution {
             switch (type) {
                 case DIST_TRANSLOGISTIC:
                     for (int j = 0; j < num_states; j++) {
-                        prob[i][j] = new double *[input.num_seqs];
+                        prob[i][j] = new double[input.num_seqs][];
                         for (int n = 0; n < input.num_seqs; n++)
                             prob[i][j][n] = new double[input.sequence[n].seq_length];
                     }
                     break;
                 case DIST_LOGISTIC:
-                    prob[i][0] = new double *[input.num_seqs];
+                    prob[i][0] = new double[input.num_seqs][];
                     for (int n = 0; n < input.num_seqs; n++)
                         prob[i][0][n] = new double[input.sequence[n].seq_length];
                     break;
@@ -4843,15 +4832,15 @@ public class Distribution {
         if (!found_positive && f > 0.0) {
             gamma_positive = gamma;
             fpos = f;
-            found_positive = 1;
+            found_positive = true;
         } else if (!found_negative && f < 0.0) {
             gamma_negative = gamma;
             fneg = f;
-            found_negative = 1;
+            found_negative = true;
         }
 
         if (NEWTONRAPHSON_VERBOSE) {
-            fprintf(stdout, "Initial gamma=%.12f, f(gamma)=%.12f\n", gamma, f);
+            System.out.format("Initial gamma=%.12f, f(gamma)=%.12f\n", gamma, f);
         }
 
         epsilon = MIN_NR_EPSILON / (double) iter;
@@ -4966,20 +4955,20 @@ public class Distribution {
                 } /* For each sequence */
 
             if (f > 0.0) {
-                if (found_positive == null) {
+                if (!found_positive) {
                     gamma_positive = gamma;
                     fpos = f;
-                    found_positive = 1;
+                    found_positive = true;
                 } else if (f < fpos) {
                     gamma_positive = gamma;
                     fpos = f;
                 }
             } else
                 /* f<0.0 */
-                if (found_negative == null) {
+                if (!found_negative) {
                     gamma_negative = gamma;
                     fneg = f;
-                    found_negative = 1;
+                    found_negative = true;
                 } else if (f > fneg) {
                     gamma_negative = gamma;
                     fneg = f;
@@ -4988,13 +4977,13 @@ public class Distribution {
             iteration++;
 
             if (NEWTONRAPHSON_VERBOSE) {
-                fprintf(stdout, "Iteration %d: new value=%.12f, f(gamma)=%.12f; previous f'(gamma)=%.8f; factor=%.8f\n",
+                System.out.format("Iteration %d: new value=%.12f, f(gamma)=%.12f; previous f'(gamma)=%.8f; factor=%.8f\n",
                         iteration, gamma, f, fprime, factor);
             }
 
-            if ((!finite(f) || (abs(f) > abs(f_prev))) && iteration < MAX_NR_ITERATIONS) { /* Diverging */
+            if ((!isFinite(f) || (abs(f) > abs(f_prev))) && iteration < MAX_NR_ITERATIONS) { /* Diverging */
                 if (NEWTONRAPHSON_VERBOSE) {
-                    fprintf(stdout, "Absolute value of f is increasing -- needs adjustment\n");
+                    System.out.format("Absolute value of f is increasing -- needs adjustment\n");
                 }
 
                 /* Dividing factor until reach a better point */
@@ -5003,20 +4992,20 @@ public class Distribution {
                     gamma = gamma_prev - factor;
                     f = logistic_derivative_along_vector(input, Anti, Bntij, delta, gamma);
                     if (NEWTONRAPHSON_VERBOSE) {
-                        fprintf(stdout, "Trying factor %.12f; new f=%.12f\n", factor, f);
+                        System.out.format("Trying factor %.12f; new f=%.12f\n", factor, f);
                     }
                 }
-                while ((!finite(f) && finite(factor)) || (abs(f) > abs(f_prev) && abs(f - f_prev) > COMP_EPSILON));
+                while ((!isFinite(f) && isFinite(factor)) || (abs(f) > abs(f_prev) && abs(f - f_prev) > COMP_EPSILON));
 
-                if (!finite(f) || abs(f - f_prev) <= COMP_EPSILON) { /* Resetting to previous value of gamma and exiting */
+                if (!isFinite(f) || abs(f - f_prev) <= COMP_EPSILON) { /* Resetting to previous value of gamma and exiting */
                     gamma = gamma_prev;
                     iteration = MAX_NR_ITERATIONS;
                     if (NEWTONRAPHSON_VERBOSE) {
-                        fprintf(stdout, "Unable to improve on f\n");
+                        System.out.format("Unable to improve on f\n");
                     }
                 } /* Resetting to previous value of gamma and exiting */ else {
                     if (NEWTONRAPHSON_VERBOSE) {
-                        fprintf(stdout, "Updated value=%.12f, f(gamma)=%.12f, factor=%.8f\n",
+                        System.out.format("Updated value=%.12f, f(gamma)=%.12f, factor=%.8f\n",
                                 gamma, f, factor);
                     }
                 }
@@ -5045,7 +5034,7 @@ public class Distribution {
 
             if (found_negative && found_positive) { /* Finding a zero by halving the interval */
                 if (NEWTONRAPHSON_VERBOSE) {
-                    fprintf(stdout, "Newton-Raphson failed; running halving algorithm\n");
+                    System.out.format("Newton-Raphson failed; running halving algorithm\n");
                 }
 
                 linear_search_logistic_halving(input, Anti, Bntij, log_un_prob,
@@ -5066,7 +5055,7 @@ public class Distribution {
         } /* Newton-Raphson failed */ else { /* Run finished fine */
             /* Updating the set of parameters by gamma*delta */
             if (fprime > 0.0) {
-                System.err.print("f'=%.12f: Newton-Raphson found minimum instead of a maximum!\n", fprime);
+                System.err.format("f'=%.12f: Newton-Raphson found minimum instead of a maximum!\n", fprime);
             }
 
             for (int i = 1; i < num_states; i++) {
@@ -5088,7 +5077,7 @@ public class Distribution {
             } else
                 for (int j = 0; j < num_states; j++) {
                     for (int n = 0; n < input.num_seqs; n++)
-                        adj_fact[i][j] = null[n];
+                        adj_fact[i][j][n] = null;
                     adj_fact[i][j] = null;
                 }
             adj_fact[i] = null;
@@ -5103,7 +5092,7 @@ public class Distribution {
             } else
                 for (int j = 0; j < num_states; j++) {
                     for (int n = 0; n < input.num_seqs; n++)
-                        prob[i][j] = null[n];
+                        prob[i][j][n] = null;
                     prob[i][j] = null;
                 }
             prob[i] = null;
@@ -5113,14 +5102,14 @@ public class Distribution {
         return;
     }
 
-    void  linear_search_logistic_halving(Data input,
-                                   double[][][]Anti,
-                                   double[][][][]Bntij,
-                                   double[][][][]log_un_prob,
-                                   Distribution delta,
-                                   int iter,
-                                   double gamma_negative,
-                                   double gamma_positive) {
+    void linear_search_logistic_halving(Data input,
+                                        double[][][] Anti,
+                                        double[][][][] Bntij,
+                                        double[][][][] log_un_prob,
+                                        Distribution delta,
+                                        int iter,
+                                        double gamma_negative,
+                                        double gamma_positive) {
         /* Line search method (utilizing Newton Raphson) to find the maximum of the function */
 
   /* Variables passed:
@@ -5146,9 +5135,9 @@ public class Distribution {
 
         if (NEWTONRAPHSON_VERBOSE) {
             f = logistic_derivative_along_vector(input, Anti, Bntij, delta, gamma_negative);
-            fprintf(stdout, "Negative gamma=%.12f; f=%.12f\n", gamma_negative, f);
+            System.out.format("Negative gamma=%.12f; f=%.12f\n", gamma_negative, f);
             f = logistic_derivative_along_vector(input, Anti, Bntij, delta, gamma_positive);
-            fprintf(stdout, "Positive gamma=%.12f; f=%.12f\n", gamma_positive, f);
+            System.out.format("Positive gamma=%.12f; f=%.12f\n", gamma_positive, f);
         }
 
         do {
@@ -5156,7 +5145,7 @@ public class Distribution {
             f = logistic_derivative_along_vector(input, Anti, Bntij, delta, gamma);
 
             if (NEWTONRAPHSON_VERBOSE) {
-                fprintf(stdout, "Current gamma=%.12f; current f=%.12f\n", gamma, f);
+                System.out.format("Current gamma=%.12f; current f=%.12f\n", gamma, f);
             }
             if (f < 0.0)
                 gamma_negative = gamma;
@@ -5192,14 +5181,14 @@ public class Distribution {
     }
 
     double logistic_derivative_along_vector(Data input,
-                                     double[][][]Anti,
-                                     double[][][][]Bntij,
-                                     Distribution delta,
-                                     double gamma) {
+                                            double[][][] Anti,
+                                            double[][][][] Bntij,
+                                            Distribution delta,
+                                            double gamma) {
         double f;
 
-        double[]prob;
-        double[]adj_fact;
+        double[] prob;
+        double[] adj_fact;
 
         prob = new double[num_states];
         adj_fact = new double[num_states];
@@ -5258,14 +5247,14 @@ public class Distribution {
     }
 
 
-    int  compute_envelopes(DataPoint v, double[][]mult) {
+    int compute_envelopes(DataPoint v, double[][] mult) {
   /* Given a forest structure and a mask indicating missing entries,
      partitions the nodes corresponding to missing observations into maximal
      trees (envelopes) */
 
         int num_envelopes = 0;
 
-        int[]node_index;
+        int[] node_index;
 
         /* Initializing */
         node_index = new int[dim];
@@ -5278,8 +5267,8 @@ public class Distribution {
 
         for (int e = 0; e < num_edges; e++) { /* For each of the edges */
             /* Shortcuts */
-           int  i1 = edge[e][0];
-          int   i2 = edge[e][1];
+            int i1 = edge[e][0];
+            int i2 = edge[e][1];
 
             if (!is_missing(v.ddata[dim_index[i1]])) { /* First variable is instantiated */
                 if (!is_missing(v.ddata[dim_index[i2]])) { /* Both variables are instantiated */
@@ -5297,7 +5286,7 @@ public class Distribution {
                         node_index[i1] = node_index[i2];
                     } /* Second variables belongs to an envelope -- ading the first variables to the same envelope */ else { /* Neither variable is in an envelope -- creating a new envelope */
                         envelope[num_envelopes] = new Envelope(dim);
-                        envelope[num_envelopes].is_missing = 0;
+                        envelope[num_envelopes].is_missing = false;
                         envelope[num_envelopes].num_nodes = 2;
                         envelope[num_envelopes].num_edges = 1;
                         envelope[num_envelopes].edge[0] = e;
@@ -5314,7 +5303,7 @@ public class Distribution {
                             mult[i2][i] *= edge_prob[e][v.ddata[dim_index[i1]]][i] / (ind_prob[i1][v.ddata[dim_index[i1]]] * ind_prob[i2][i]);
                     } /* Missing variable already belongs to an envelope; adding the edge to the same envelope. */ else { /* Creating an envelope for the uninstantiated variable */
                         envelope[num_envelopes] = new Envelope(dim);
-                        envelope[num_envelopes].is_missing = 1;
+                        envelope[num_envelopes].is_missing = true;
                         envelope[num_envelopes].num_nodes = 1;
                         envelope[num_envelopes].num_edges = 0;
                         envelope[num_envelopes].node[0] = i2;
@@ -5333,7 +5322,7 @@ public class Distribution {
                             mult[i1][i] *= edge_prob[e][i][v.ddata[dim_index[i2]]] / (ind_prob[i1][i] * ind_prob[i2][v.ddata[dim_index[i2]]]);
                     } /* Missing variable already belongs to an envelope.  Adding the edge to that envelope. */ else { /* Creating an envelope for the missing variable */
                         envelope[num_envelopes] = new Envelope(dim);
-                        envelope[num_envelopes].is_missing = 1;
+                        envelope[num_envelopes].is_missing = true;
                         envelope[num_envelopes].num_nodes = 1;
                         envelope[num_envelopes].num_edges = 0;
                         envelope[num_envelopes].node[0] = i1;
@@ -5358,7 +5347,7 @@ public class Distribution {
                         node_index[i1] = node_index[i2];
                     } /* Second variable belongs to an envelope; adding the first variable to the same envelope. */ else { /* Creating a new envelope */
                         envelope[num_envelopes] = new Envelope(dim);
-                        envelope[num_envelopes].is_missing = 1;
+                        envelope[num_envelopes].is_missing = true;
                         envelope[num_envelopes].num_nodes = 2;
                         envelope[num_envelopes].num_edges = 1;
                         envelope[num_envelopes].node[0] = i1;
@@ -5376,7 +5365,7 @@ public class Distribution {
         for (int i = 0; i < dim; i++)
             if (node_index[i] == -1 && is_missing(v.ddata[dim_index[i]])) { /* Creating a single node envelope */
                 envelope[num_envelopes] = new Envelope(1);
-                envelope[num_envelopes].is_missing = 1;
+                envelope[num_envelopes].is_missing = true;
                 envelope[num_envelopes].num_nodes = 1;
                 envelope[num_envelopes].num_edges = 0;
                 envelope[num_envelopes].node[0] = i;
@@ -5394,7 +5383,7 @@ public class Distribution {
          */
         int num_envelopes = 0;
 
-        int[]node_index;
+        int[] node_index;
 
         /* Initializing */
         node_index = new int[dim];
@@ -5421,7 +5410,7 @@ public class Distribution {
                 node_index[i1] = node_index[i2];
             } /* Second variable belongs to an envelope; adding the first variable to the same envelope. */ else { /* Creating a new envelope */
                 envelope[num_envelopes] = new Envelope(dim);
-                envelope[num_envelopes].is_missing = 1;
+                envelope[num_envelopes].is_missing = true;
                 envelope[num_envelopes].num_nodes = 2;
                 envelope[num_envelopes].num_edges = 1;
                 envelope[num_envelopes].node[0] = i1;
@@ -5437,7 +5426,7 @@ public class Distribution {
         for (int i = 0; i < dim; i++)
             if (node_index[i] == -1) { /* Creating a single node envelope */
                 envelope[num_envelopes] = new Envelope(1);
-                envelope[num_envelopes].is_missing = 1;
+                envelope[num_envelopes].is_missing = true;
                 envelope[num_envelopes].num_nodes = 1;
                 envelope[num_envelopes].num_edges = 0;
                 envelope[num_envelopes].node[0] = i;
@@ -5450,13 +5439,13 @@ public class Distribution {
         return (num_envelopes);
     }
 
-    void  PostProcess() {
+    void PostProcess() {
         /* Rearranging the parameters */
 
-        int[]visited;
+        boolean[] visited;
 
-        int[][]child;
-        int[]num_parents;
+        int[][] child;
+        int[] num_parents;
         int num_inserted;
 
         /* Temporary variable(s) */
@@ -5512,25 +5501,23 @@ public class Distribution {
                         }
                     }
 
-                visited = new int[dim];
-                for (int i = 0; i < dim; i++)
-                    visited[i] = 0;
+                visited = new boolean[dim];
 
                 /* Building an ordering */
                 num_inserted = 0;
                 while (num_inserted < dim) {
                     /* Looking for the non-visited node with 0 parents */
                     int i = 0;
-                    while (visited[i] != 0 || num_parents[i] > 0)
+                    while (visited[i] || num_parents[i] > 0)
                         i++;
 
                     /* Adding i to the list */
                     sim_order[num_inserted] = i;
                     num_inserted++;
 
-                    visited[i] = 1;
+                    visited[i] = true;
                     for (int j = 0; j < dim; j++)
-                        if (child[i][j]!= 0)
+                        if (child[i][j] != 0)
                             num_parents[j]--;
                 }
 
@@ -5542,17 +5529,16 @@ public class Distribution {
 
                 break;
             default:
-                ;
         }
     }
 
-    void InformationGain(int num_points, int[][]data, double[]w, double norm_const, double[]sw,
-                    int[]candidate, double[]gain, double[]alpha, int index) {
+    void InformationGain(int num_points, int[][] data, double[] w, double norm_const, double[] sw,
+                         int[] candidate, double[] gain, double[] alpha, int index) {
         /* Implementation of the Information Gain score */
         int max_num_features;
 
-        double[]param_sum_f;
-        double[]p;
+        double[] param_sum_f;
+        double[] p;
 
         double d1, d2; // First and second derivatives
 
@@ -5561,7 +5547,7 @@ public class Distribution {
         /* Determining the dimensionality of the candidate array */
         if (type == DIST_BN_ME_BIVAR)
             max_num_features = dim;
-        else if (type == DIST_BN_CME_BIVAR)
+        else //if (type == DIST_BN_CME_BIVAR)
             max_num_features = 2 * dim;
 
         /* Initializing the array of linear sums for each datum */
@@ -5601,7 +5587,7 @@ public class Distribution {
                     /* Computing the second derivative */
                     d2 = 0.0;
                     for (int n = 0; n < num_points; n++)
-                        if (data[n][i]!= 0)
+                        if (data[n][i] != 0)
                             d2 -= w[n] * p[n] * (1.0 - p[n]);
 
                     /* Updating the parameter */
@@ -5611,7 +5597,7 @@ public class Distribution {
                 /* Computing gain */
                 gain[i] = alpha[i] * sw[i];
                 for (int n = 0; n < num_points; n++)
-                    if (data[n][i]!= 0)
+                    if (data[n][i] != 0)
                         gain[i] -= w[n] * (log(1.0 + exp(alpha[i] + param_sum_f[n])) - log(1.0 + exp(param_sum_f[n])));
                 gain[i] /= norm_const;
 
@@ -5624,22 +5610,22 @@ public class Distribution {
         return;
     }
 
-    double learn_univariate_conditional_maxent(int num_points, int[][]data, double[]w, double norm_const, int index,
-                                               double[]sw, int num_features, double[]delta, int[]feature) {
+    double learn_univariate_conditional_maxent(int num_points, int[][] data, double[] w, double norm_const, int index,
+                                               double[] sw, int num_features, double[] delta, int[] feature) {
 
         double wll = 0.0;                        // Weighted log-likelihood
         double prev_wll = NEG_INF;               // Previous value of weighted log-likelihood
-        double[]delta_sum_f;                   // Linear sums in the exponents (contribution from base)
+        double[] delta_sum_f;                   // Linear sums in the exponents (contribution from base)
         int iteration = 0;                      // Iteration of the conjugate gradient algorithm
-        double []gradient, old_gradient;       // Gradient of the weighted log-likelihood
-        double[]xi;                            // Direction of the ascent
+        double[] gradient, old_gradient;       // Gradient of the weighted log-likelihood
+        double[] xi;                            // Direction of the ascent
         double gamma, gamma_pr, gamma_fr;      // Coefficient used in determining the direction of the ascent
-        double[]xi_sum_f;                      // Linear sums in the exponents (contribution from the direction)
+        double[] xi_sum_f;                      // Linear sums in the exponents (contribution from the direction)
         double nu;                             // The solution of the linear search problem
         int iteration_nr;                     // Newton-Raphson iteration index
         double d1, d2;                          // First and second derivative of the log-likelihood
-        double[]p;                             // Probability P(1|other variables, parameters)
-        
+        double[] p;                             // Probability P(1|other variables, parameters)
+
         /* Temporary variables */
         double gg, og, oo;
 
@@ -5664,12 +5650,12 @@ public class Distribution {
         /* Computing the linear sums in the exponents */
         for (int n = 0; n < num_points; n++)
             for (int i = 1; i < num_features; i++)
-                if (data[n][feature[i]]!= 0)
+                if (data[n][feature[i]] != 0)
                     delta_sum_f[n] += delta[i];
 
         /* Computing weighted log-likelihood */
         for (int n = 0; n < num_points; n++)
-            if (data[n][index]!= 0)
+            if (data[n][index] != 0)
                 wll += w[n] * (delta_sum_f[n] - log(1.0 + exp(delta_sum_f[n])));
             else
                 wll -= w[n] * log(1.0 + exp(delta_sum_f[n]));
@@ -5777,7 +5763,7 @@ public class Distribution {
             wll = 0.0;
             /* Computing weighted log-likelihood */
             for (int n = 0; n < num_points; n++)
-                if (data[n][index])
+                if (data[n][index] != 0)
                     wll += w[n] * (delta_sum_f[n] - log(1.0 + exp(delta_sum_f[n])));
                 else
                     wll -= w[n] * log(1.0 + exp(delta_sum_f[n]));
@@ -5800,9 +5786,9 @@ public class Distribution {
         return (wll);
     }
 
-    void normalize_logistic(double[]log_un_prob, double[]prob, int num_states, int first) {
+    void normalize_logistic(double[] log_un_prob, double[] prob, int num_states, int first) {
         /* Calculating normalized softmax function given unnormalized exponent expressions */
-        
+
         /* Temporary variable(s) */
         double sum;
         double max;
@@ -5912,7 +5898,7 @@ public class Distribution {
         return (transition);
     }
 
-    void  Expand(Distribution transition) {
+    void Expand(Distribution transition) {
         /* Expands a model without inputs to a model with inputs of dimension d */
 
         /* Temporary variable(s) */
@@ -5978,7 +5964,7 @@ public class Distribution {
                 /* Allocating the array of pairwise probabilities for P(x) */
                 pair_P = new double[dim][][][];
                 for (int i1 = 0; i1 < dim; i1++) {
-                    pair_P[i1] = new double [i1][][];
+                    pair_P[i1] = new double[i1][][];
                     for (int i2 = 0; i2 < i1; i2++) {
                         pair_P[i1][i2] = new double[num_states][];
                         for (int b1 = 0; b1 < num_states; b1++)
@@ -6004,7 +5990,7 @@ public class Distribution {
                     int node1 = edge[e][0];
                     int node2 = edge[e][1];
                     if (FLAG_KL) {
-                        out.format("Considering edge %d %d\n", node1, node2);
+                        System.out.format("Considering edge %d %d\n", node1, node2);
                     }
                     /* Updating the edge probabilities for edge e */
                     for (int b1 = 0; b1 < num_states; b1++)
@@ -6013,7 +5999,7 @@ public class Distribution {
 
                     if (visited[node1]) { /* node2 is not visited */
                         if (FLAG_KL) {
-                            out.format("First node (%d) visited\n", node1);
+                            System.out.format("First node (%d) visited\n", node1);
                         }
                         /* Updating node2 probabilities */
                         visited[node2] = true;
@@ -6023,7 +6009,7 @@ public class Distribution {
                         for (int i1 = 0; i1 < node2; i1++)
                             if (visited[i1]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", node2, i1);
+                                    System.out.format("Updating pair %d %d\n", node2, i1);
                                 }
                                 for (int b2 = 0; b2 < num_states; b2++)
                                     for (int b1 = 0; b1 < num_states; b1++) {
@@ -6038,7 +6024,7 @@ public class Distribution {
                         for (int i1 = node2 + 1; i1 < node1; i1++)
                             if (visited[i1]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", i1, node2);
+                                    System.out.format("Updating pair %d %d\n", i1, node2);
                                 }
                                 for (int b2 = 0; b2 < num_states; b2++)
                                     for (int b1 = 0; b1 < num_states; b1++) {
@@ -6053,7 +6039,7 @@ public class Distribution {
                         for (int i1 = node1 + 1; i1 < dim; i1++)
                             if (visited[i1]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", i1, node2);
+                                    System.out.format("Updating pair %d %d\n", i1, node2);
                                 }
                                 for (int b2 = 0; b2 < num_states; b2++)
                                     for (int b1 = 0; b1 < num_states; b1++) {
@@ -6065,7 +6051,7 @@ public class Distribution {
                             }
                     } /* node2 is not visited */ else if (visited[node2]) { /* node1 is not visited */
                         if (FLAG_KL) {
-                            out.format("Second node (%d) visited\n", node2);
+                            System.out.format("Second node (%d) visited\n", node2);
                         }
                         /* Updating node1 probabilities */
                         visited[node1] = true;
@@ -6075,7 +6061,7 @@ public class Distribution {
                         for (int i2 = 0; i2 < node2; i2++)
                             if (visited[i2]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", node1, i2);
+                                    System.out.format("Updating pair %d %d\n", node1, i2);
                                 }
                                 for (int b1 = 0; b1 < num_states; b1++)
                                     for (int b2 = 0; b2 < num_states; b2++) {
@@ -6090,7 +6076,7 @@ public class Distribution {
                         for (int i2 = node2 + 1; i2 < node1; i2++)
                             if (visited[i2]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", node1, i2);
+                                    System.out.format("Updating pair %d %d\n", node1, i2);
                                 }
                                 for (int b1 = 0; b1 < num_states; b1++)
                                     for (int b2 = 0; b2 < num_states; b2++) {
@@ -6105,7 +6091,7 @@ public class Distribution {
                         for (int i2 = node1 + 1; i2 < dim; i2++)
                             if (visited[i2]) {
                                 if (FLAG_KL) {
-                                    out.format("Updating pair %d %d\n", i2, node1);
+                                    System.out.format("Updating pair %d %d\n", i2, node1);
                                 }
                                 for (int b1 = 0; b1 < num_states; b1++)
                                     for (int b2 = 0; b2 < num_states; b2++) {
@@ -6117,7 +6103,7 @@ public class Distribution {
                             }
                     } /* node1 is not visited */ else { /* Neither node has been visited */
                         if (FLAG_KL) {
-                            out.format("Neither node (%d %d) visited\n", node1, node2);
+                            System.out.format("Neither node (%d %d) visited\n", node1, node2);
                         }
                         visited[node1] = true;
                         visited[node2] = true;
@@ -6130,9 +6116,9 @@ public class Distribution {
                     /* !!! START !!! */
                     for (int i1 = 0; i1 < dim; i1++)
                         for (int i2 = 0; i2 < i1; i2++)
-                            out.format("%d\t%d\t%0.3le\t%0.3le\t%0.3le\t%0.3le\n", i1, i2,
+                            System.out.format("%d\t%d\t%0.3le\t%0.3le\t%0.3le\t%0.3le\n", i1, i2,
                                     pair_P[i1][i2][0][0], pair_P[i1][i2][0][1], pair_P[i1][i2][1][0], pair_P[i1][i2][1][1]);
-                    out.format("\n");
+                    System.out.format("\n");
 
                     double[][] MI;
 
@@ -6158,8 +6144,8 @@ public class Distribution {
                     /* Displaying */
                     for (int i1 = 0; i1 < dim; i1++) {
                         for (int i2 = 0; i2 < dim; i2++)
-                            out.format("\t%0.3le", MI[i1][i2]);
-                        out.format("\n");
+                            System.out.format("\t%0.3le", MI[i1][i2]);
+                        System.out.format("\n");
                     }
 
                     for (int i1 = 0; i1 < dim; i1++)
@@ -6251,7 +6237,7 @@ public class Distribution {
                 for (int env = 0; env < num_envelopes; env++)
                     /* For each envelope */
                     if (envelope[env].is_missing && envelope[env].num_nodes == 1) { /* Envelope contains exactly one missing variable. */
-                        root_node = envelope[env].node[0];
+                        int root_node = envelope[env].node[0];
 
                         new_v.ddata[root_node] = 0;
                         root_prob = ind_prob[root_node][0] * mult[root_node][0];
@@ -6264,14 +6250,14 @@ public class Distribution {
                         } /* Picking the most probable missing variable */
                     } /* Envelope contains exactly one missing variable. */ else if (envelope[env].is_missing && envelope[env].num_nodes > 1) { /* Envelope contains more than one missing variable. */
                         /* Allocating arrays of maximum probabilities for this envelope */
-                        max_prob = new double[envelope[env].num_nodes - 1];
-                        max_index = new int[envelope[env].num_nodes - 1];
+                        max_prob = new double[envelope[env].num_nodes - 1][];
+                        max_index = new int[envelope[env].num_nodes - 1][];
 
                         for (int e = envelope[env].num_edges - 1;
                              e >= 0;
                              e--) { /* Edges in the backward pass */
-                            node1 = edge[envelope[env].edge[e]][0];
-                            node2 = edge[envelope[env].edge[e]][1];
+                            int node1 = edge[envelope[env].edge[e]][0];
+                            int node2 = edge[envelope[env].edge[e]][1];
 
                             /* Allocating the part of the maximum probability arrays */
                             max_prob[e] = new double[num_states];
@@ -6310,7 +6296,7 @@ public class Distribution {
                         } /* Edges in the backward pass */
 
                         /* Updating the root of the envelope */
-                        root_node = envelope[env].node[0];
+                        int root_node = envelope[env].node[0];
 
                         /* Finding the max for the root node */
                         new_v.ddata[root_node] = 0;
@@ -6326,8 +6312,8 @@ public class Distribution {
                         /* Forward pass */
                         for (int e = 0; e < envelope[env].num_edges;
                              e++) {
-                            node1 = edge[envelope[env].edge[e]][0];
-                            node2 = edge[envelope[env].edge[e]][1];
+                            int node1 = edge[envelope[env].edge[e]][0];
+                            int node2 = edge[envelope[env].edge[e]][1];
 
                             if (envelope[env].node[e + 1] == node2)
                                 /* node1 is the parent of node2 */
@@ -6396,7 +6382,6 @@ public class Distribution {
 */
     double gammaln(double x) {
         double result, y, xnum, xden;
-        int i;
         double d1 = -5.772156649015328605195174e-1;
         double p1[] = {
                 4.945235359296727046734888e0, 2.018112620856775083915565e2,
@@ -6519,7 +6504,7 @@ public class Distribution {
     double digamma(double x) {
         //  static const double neginf = -1.0/0,
         //  static const double neginf = -1e+300,
-        static const double
+        double
                 c = 12,
                 d1 = -0.57721566490153286,
                 d2 = 1.6449340668482264365, /* pi^2/6 */
@@ -6541,7 +6526,7 @@ public class Distribution {
                 hits++;
             }
             if (total % 1000 == 1) {
-                out.format("hits = %d, total = %d, hits/total = %g\n", hits, total,
+                System.out.format("hits = %d, total = %d, hits/total = %g\n", hits, total,
                         ((double) hits) / total);
             }
             cache_x = x;
@@ -6682,12 +6667,12 @@ public class Distribution {
         int line_number = 0;
 
         /* Distribution */
-        Distribution dist;
+        Distribution dist = null;
 
         /* Parameters */
         int t, param1, param2;
         double mdl_prior;         // Penalty term for parameters
-        double pcount;            // Pseudo-count -- Dirichlet prior
+        double pcount = 0;            // Pseudo-count -- Dirichlet prior
 
         /* Temporary variable(s) */
         String temp_char;
@@ -6765,6 +6750,7 @@ public class Distribution {
             t = DIST_TRANSLOGISTIC;
         else {
             System.err.format("Unknown distribution type %s on line %d.  Skipping.\n", temp_char, line_number);
+            return null;
         }
 
         temp_char = null;
@@ -6839,11 +6825,11 @@ public class Distribution {
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-component mixture distribution via a multinomial distribution\n", dist.num_states);
                     if (t == DIST_MIXTURE_PRIOR)
-                       System. out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
+                        System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
 
-                dist.subdist = new Distribution **[1];
-                dist.subdist[0] = new Distribution *[dist.num_states];
+                dist.subdist = new Distribution[1][];
+                dist.subdist[0] = new Distribution[dist.num_states];
                 for (int i = 0; i < dist.num_states; i++)
                     dist.subdist[0][i] = ReadDistribution(input);
                 break;
@@ -6871,12 +6857,12 @@ public class Distribution {
                     dist.pcount = pcount * dist.num_states;
                 } /* Reading in the parameters for the prior */
                 if (INPUT_VERBOSE) {
-                   System. out.format("%d-component mixture distribution defined via a multinomial distribution\n", dist.num_states);
+                    System.out.format("%d-component mixture distribution defined via a multinomial distribution\n", dist.num_states);
                     if (t == DIST_ALIAS_MIXTURE_PRIOR)
-                        System.  out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
+                        System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
-                dist.subdist = new Distribution **[1];
-                dist.subdist[0] = new Distribution *[dist.num_states];
+                dist.subdist = new Distribution[1][];
+                dist.subdist[0] = new Distribution[dist.num_states];
                 dist.subdist[0][0] = ReadDistribution(input);
                 for (int i = 1; i < dist.num_states; i++)
                     dist.subdist[0][i] = dist.subdist[0][0].copy();
@@ -6919,11 +6905,11 @@ public class Distribution {
                 mdl_prior = readFile.read_double();
                 dist.mdl_beta = mdl_prior;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
+                    System.out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
                 }
-                dist.subdist = new Distribution **[dist.dim];
+                dist.subdist = new Distribution[dist.dim][];
                 for (int i = 0; i < dist.dim; i++)
-                    dist.subdist[i] = new Distribution *[dist.num_states];
+                    dist.subdist[i] = new Distribution[dist.num_states];
                 for (int i = 0; i < dist.dim; i++)
                     for (int j = 0; j < dist.num_states; j++)
                         dist.subdist[i][j] = ReadDistribution(input);
@@ -6957,7 +6943,7 @@ public class Distribution {
                     mdl_prior = readFile.read_double();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
-                        System.  out.format("%d-variable %d-component tree-structured mixture with MDL factor %0.6le\n",
+                        System.out.format("%d-variable %d-component tree-structured mixture with MDL factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
                 } else if (t == DIST_ALIAS_CLMIXTURE_PRIOR) {
@@ -6980,12 +6966,12 @@ public class Distribution {
                     mdl_prior = readFile.read_double();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
-                       System. out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
+                        System.out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
                     }
                 }
-                dist.subdist = new Distribution **[dist.dim];
+                dist.subdist = new Distribution[dist.dim][];
                 for (int i = 0; i < dist.dim; i++)
-                    dist.subdist[i] = new Distribution *[dist.num_states];
+                    dist.subdist[i] = new Distribution[dist.num_states];
                 for (int j = 0; j < dist.num_states; j++)
                     dist.subdist[0][j] = ReadDistribution(input);
                 for (int i = 1; i < dist.dim; i++)
@@ -7028,9 +7014,9 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("Univariate %d-valued Bernoulli\n", dist.num_states);
+                    System.out.format("Univariate %d-valued Bernoulli\n", dist.num_states);
                     if (t == DIST_BERNOULLI_PRIOR)
-                        System.  out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
+                        System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
                 break;
             case DIST_CONDBERNOULLI:
@@ -7077,13 +7063,13 @@ public class Distribution {
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
                     if (t == DIST_CONDBERNOULLI)
-                        System.  out.format("Univariate %d-valued conditional Bernoulli\n", dist.num_states);
+                        System.out.format("Univariate %d-valued conditional Bernoulli\n", dist.num_states);
                     else if (t == DIST_CONDBERNOULLIG)
-                        System.   out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value\n", dist.num_states);
+                        System.out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value\n", dist.num_states);
                     else if (t == DIST_CONDBERNOULLI_PRIOR)
-                        System.    out.format("Univariate %d-valued conditional Bernoulli with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
+                        System.out.format("Univariate %d-valued conditional Bernoulli with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
                     else if (t == DIST_CONDBERNOULLIG_PRIOR)
-                        System.   out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
+                        System.out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
                 }
                 break;
             case DIST_UNICONDMVME:
@@ -7122,7 +7108,7 @@ public class Distribution {
                     mdl_prior = readFile.read_double();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
-                        System.  out.format("%d-variate %d-valued Chow-Liu tree with MDL prior with factor %0.6le\n",
+                        System.out.format("%d-variate %d-valued Chow-Liu tree with MDL prior with factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
                 } else if (t == DIST_CHOWLIU_DIR_MDL) {
@@ -7135,7 +7121,7 @@ public class Distribution {
                     for (int i = 0; i < dist.dim; i++)
                         for (int j = 0; j < i; j++)
                             for (int b1 = 0; b1 < dist.num_states; b1++)
-                                for (int b2 =  0; b2 < dist.num_states; b2++)
+                                for (int b2 = 0; b2 < dist.num_states; b2++)
                                     dist.pcount_bi[i][j][b1][b2] = pcount;
                     /* !!! Shortcut for the computation of the marginals !!! */
                     for (int i = 0; i < dist.dim; i++)
@@ -7145,11 +7131,11 @@ public class Distribution {
                     mdl_prior = readFile.read_double();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
-                        System.   out.format("%d-variate %d-valued Chow-Liu tree with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
+                        System.out.format("%d-variate %d-valued Chow-Liu tree with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
                     }
                 } else if (t == DIST_CHOWLIU) {
                     if (INPUT_VERBOSE) {
-                        System.   out.format("%d-variate %d-valued Chow-Liu tree\n", dist.dim, dist.num_states);
+                        System.out.format("%d-variate %d-valued Chow-Liu tree\n", dist.dim, dist.num_states);
                     }
                     dist.mdl_beta = 0.0;
                 }
@@ -7183,13 +7169,13 @@ public class Distribution {
                     mdl_prior = readFile.read_double();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
-                        System.  out.format("%d-variate %d-valued conditional Chow-Liu tree with MDL prior with factor %0.6le\n",
+                        System.out.format("%d-variate %d-valued conditional Chow-Liu tree with MDL prior with factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
                 } else if (t == DIST_CONDCHOWLIU) {
                     dist.mdl_beta = 0.0;
                     if (INPUT_VERBOSE) {
-                        System.  out.format("%d-variate %d-valued conditional Chow-Liu tree\n", dist.dim, dist.num_states);
+                        System.out.format("%d-variate %d-valued conditional Chow-Liu tree\n", dist.dim, dist.num_states);
                     }
                 }
                 break;
@@ -7208,7 +7194,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variate binary full bivariate MaxEnt\n", dist.dim);
+                    System.out.format("%d-variate binary full bivariate MaxEnt\n", dist.dim);
                 }
                 break;
             case DIST_BN_ME_BIVAR:
@@ -7228,7 +7214,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variate binary BN bivariate MaxEnt with MDL factor %0.6le\n", dist.dim, dist.mdl_beta);
+                    System.out.format("%d-variate binary BN bivariate MaxEnt with MDL factor %0.6le\n", dist.dim, dist.mdl_beta);
                 }
                 break;
             case DIST_BN_CME_BIVAR:
@@ -7248,7 +7234,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variate binary BN bivariate conditional MaxEnt with MDL factor %0.6le\n", dist.dim, dist.mdl_beta);
+                    System.out.format("%d-variate binary BN bivariate conditional MaxEnt with MDL factor %0.6le\n", dist.dim, dist.mdl_beta);
                 }
                 break;
             case DIST_DELTAEXP:
@@ -7264,7 +7250,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("Univariate %d-component delta-exponential mixture\n", dist.num_states);
+                    System.out.format("Univariate %d-component delta-exponential mixture\n", dist.num_states);
                 }
                 break;
             case DIST_DELTAGAMMA:
@@ -7280,7 +7266,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("Univariate %d-component delta-gamma mixture\n", dist.num_states);
+                    System.out.format("Univariate %d-component delta-gamma mixture\n", dist.num_states);
                 }
                 break;
             case DIST_DIRACDELTA:
@@ -7297,7 +7283,7 @@ public class Distribution {
                 /* By default, the component index is 0 */
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
-                    System.   out.format("Dirac's delta function at %f\n", dist.delta_value);
+                    System.out.format("Dirac's delta function at %f\n", dist.delta_value);
                 }
                 break;
             case DIST_EXP:
@@ -7305,21 +7291,21 @@ public class Distribution {
                 dist = new Distribution(t, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
-                    System.   out.format("Univariate exponential (geometric) distribution\n");
+                    System.out.format("Univariate exponential (geometric) distribution\n");
                 }
                 break;
             case DIST_GAMMA:
                 dist = new Distribution(t, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
-                    System.   out.format("Univariate gamma distribution\n");
+                    System.out.format("Univariate gamma distribution\n");
                 }
                 break;
             case DIST_LOGNORMAL:
                 dist = new Distribution(t, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
-                    System.   out.format("Univariate log-normal distribution\n");
+                    System.out.format("Univariate log-normal distribution\n");
                 }
                 break;
             case DIST_NORMAL:
@@ -7337,7 +7323,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variate Gaussian\n", dist.dim);
+                    System.out.format("%d-variate Gaussian\n", dist.dim);
                 }
                 break;
             case DIST_NORMALCHAIN:
@@ -7355,7 +7341,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.   out.format("%d-variate AR-Gaussian\n", dist.dim);
+                    System.out.format("%d-variate AR-Gaussian\n", dist.dim);
                 }
                 break;
             case DIST_NORMALCL:
@@ -7373,7 +7359,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-variate tree-structured Gaussian\n", dist.dim);
+                    System.out.format("%d-variate tree-structured Gaussian\n", dist.dim);
                 }
                 break;
             case DIST_LOGISTIC:
@@ -7394,7 +7380,7 @@ public class Distribution {
 
                 dist = new Distribution(t, param1, param2);
                 if (INPUT_VERBOSE) {
-                    System.  out.format("%d-dimensional %d-valued logistic\n", dist.dim, dist.num_states);
+                    System.out.format("%d-dimensional %d-valued logistic\n", dist.dim, dist.num_states);
                 }
                 break;
             case DIST_TRANSLOGISTIC:
@@ -7416,7 +7402,7 @@ public class Distribution {
 
                 dist = new Distribution(t, param1, param2);
                 if (INPUT_VERBOSE) {
-                    System.   out.format("%d-dimensional %d-valued trans-logistic\n", dist.dim, dist.num_states);
+                    System.out.format("%d-dimensional %d-valued trans-logistic\n", dist.dim, dist.num_states);
                 }
                 break;
             default:
@@ -7427,7 +7413,7 @@ public class Distribution {
         return (dist);
     }
 
-    void  UpdateIndex(int[]index) {
+    void UpdateIndex(int[] index) {
 
         switch (type) {
             case DIST_FACTOR:
@@ -7438,7 +7424,7 @@ public class Distribution {
 //                    subdist[0][i].UpdateIndex( & index[i] );
 //                break;
             case DIST_BERNOULLI:
-                if (subdist!= null)
+                if (subdist != null)
                     /* Mixture */
                     for (int i = 0; i < num_states; i++)
                         subdist[0][i].UpdateIndex(index);
@@ -7446,16 +7432,16 @@ public class Distribution {
                     dim_index[0] = index[0];
                 break;
             case DIST_CHOWLIU:
-                if (subdist!=null)
+                if (subdist != null)
                     /* Mixture */
                     //FIXME
                     throw new UnsupportedOperationException("FIXME");
 //                for (int i = 0; i < dim; i++)
 //                        for (int j = 0; j < num_states; j++)
 //                            subdist[i][j].UpdateIndex( & index[i] );
-    else
-                for (int i = 0; i < dim; i++)
-                    dim_index[i] = index[i];
+                else
+                    for (int i = 0; i < dim; i++)
+                        dim_index[i] = index[i];
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -7582,7 +7568,7 @@ public class Distribution {
                         for (int s = 0; s < num_states; s++)
                             edge_prob[i][j][s] = readFile.read_double();
 
-                if (subdist!= null) { /* Mixture */
+                if (subdist != null) { /* Mixture */
                     /* Reading mixing components */
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j < num_states; j++)
@@ -7849,7 +7835,7 @@ public class Distribution {
         return;
     }
 
-    void  ReadParameters2(File input) throws IOException {
+    void ReadParameters2(File input) throws IOException {
         /* Reads the values of parameters */
 
         /* Not reading in the dimension index */
@@ -8234,7 +8220,7 @@ public class Distribution {
             case DIST_TRANSLOGISTIC:
                 /* Allocating scaled forward pass updates */
                 for (int i = 0; i < num_states; i++) { /* For each state */
-                    log_fwd_update[i] = new double *[data.num_seqs];
+                    log_fwd_update[i] = new double[data.num_seqs][];
                     for (int n = 0; n < data.num_seqs; n++)
                         log_fwd_update[i][n] = new double[data.sequence[n].seq_length];
                 } /* For each state */
@@ -8724,17 +8710,17 @@ public class Distribution {
     }
 
 
-    void  Simulate(DataPoint sim, DataPoint prev_datum) {
+    void Simulate(DataPoint sim, DataPoint prev_datum) {
         /* Simulating an observation according to distribution */
 
-        int[]generated;
-        double[]prob_vector;
+        boolean[] generated;
+        double[] prob_vector;
         int num_gibbs_sims;
 
         /* Temporary variables */
         int temp_value;
-        int[]ddata;
-        double[]rdata;
+        int[] ddata;
+        double[] rdata;
         double sum;
         double temp;
 
@@ -8760,7 +8746,7 @@ public class Distribution {
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
                 if (dim == 1)
-                    if (prev_datum)
+                    if (prev_datum != null)
                         /* Not the first sequence entry */
                         sim.ddata[dim_index[0]] = generateBernoulli(cond_state_prob[prev_datum.ddata[dim_index[0]]], num_states);
                     else
@@ -8814,9 +8800,7 @@ public class Distribution {
 
                 ddata = new int[dim];
 
-                generated = new int[dim];
-                for (int i = 0; i < dim; i++)
-                    generated[i] = 0;
+                generated = new boolean[dim];
 
                 prob_vector = new double[num_states];
 
@@ -8826,7 +8810,7 @@ public class Distribution {
                     if (!generated[edge[e][0]] && !generated[edge[e][1]]) { /* Both nodes need to be simulated */
                         /* Simulating the first node of the edge */
                         ddata[edge[e][0]] = generateBernoulli(ind_prob[edge[e][0]], num_states);
-                        generated[edge[e][0]] = 1;
+                        generated[edge[e][0]] = true;
 
                         /* Simulating the second node of the edge */
                         /* Creating the probability distribution first */
@@ -8834,7 +8818,7 @@ public class Distribution {
                             prob_vector[i] = edge_prob[e][ddata[edge[e][0]]][i] / ind_prob[edge[e][0]][ddata[edge[e][0]]];
 
                         ddata[edge[e][1]] = generateBernoulli(prob_vector, num_states);
-                        generated[edge[e][1]] = 1;
+                        generated[edge[e][1]] = true;
                     } /* Both nodes need to be simulated */ else { /* Only one node needs to be simulated */
                         if (!generated[edge[e][0]]) { /* Simulating the first node of the edge given the second */
                             /* Creating the probability distribution first */
@@ -8842,7 +8826,7 @@ public class Distribution {
                                 prob_vector[i] = edge_prob[e][i][ddata[edge[e][1]]] / ind_prob[edge[e][1]][ddata[edge[e][1]]];
 
                             ddata[edge[e][0]] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][0]] = 1;
+                            generated[edge[e][0]] = true;
                         } /* Simulating the first node of the edge given the second */
 
                         if (!generated[edge[e][1]]) { /* Simulating the second node of the edge given the first */
@@ -8851,7 +8835,7 @@ public class Distribution {
                                 prob_vector[i] = edge_prob[e][ddata[edge[e][0]]][i] / ind_prob[edge[e][0]][ddata[edge[e][0]]];
 
                             ddata[edge[e][1]] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][1]] = 1;
+                            generated[edge[e][1]] = true;
                         } /* Simulating the second node of the edge given the first */
                     } /* Only one node needs to be simulated */
                 }
@@ -8867,7 +8851,7 @@ public class Distribution {
                 generated = null;
 
                 for (int i = 0; i < dim; i++)
-                    if (subdist!=null)
+                    if (subdist != null)
                         /* Mixture */
                         subdist[i][ddata[i]].Simulate(sim, prev_datum);
                     else
@@ -8883,10 +8867,9 @@ public class Distribution {
 
                 ddata = new int[dim];
 
-                generated = new int[2 * dim];
+                generated = new boolean[2 * dim];
                 for (int i = 0; i < dim; i++) {
-                    generated[i] = 0;
-                    generated[i + dim] = 1;
+                    generated[i + dim] = true;
                 }
 
                 prob_vector = new double[num_states];
@@ -8897,7 +8880,7 @@ public class Distribution {
                     if (!generated[edge[e][0]] && !generated[edge[e][1]]) { /* Both nodes need to be simulated */
                         /* Simulating the first node of the edge */
                         ddata[edge[e][0]] = generateBernoulli(ind_prob[edge[e][0]], num_states);
-                        generated[edge[e][0]] = 1;
+                        generated[edge[e][0]] = true;
 
                         /* Simulating the second node of the edge */
                         /* Creating the probability distribution first */
@@ -8906,13 +8889,13 @@ public class Distribution {
                                     ind_prob[edge[e][0]][ddata[edge[e][0]]];
 
                         ddata[edge[e][1]] = generateBernoulli(prob_vector, num_states);
-                        generated[edge[e][1]] = 1;
+                        generated[edge[e][1]] = true;
                     } /* Both nodes need to be simulated */ else { /* Only one node needs to be simulated */
                         if (!generated[edge[e][0]]) { /* Simulating the first node of the edge given the second */
                             /* Creating the probability distribution first */
                             if (edge[e][1] < dim)
                                 temp_value = ddata[edge[e][1]];
-                            else if (prev_datum)
+                            else if (prev_datum != null)
                                 temp_value = prev_datum.ddata[dim_index[edge[e][1] - dim]];
                             else
                                 temp_value = missing_value((int) 0);
@@ -8925,14 +8908,14 @@ public class Distribution {
                                     prob_vector[i] = ind_prob[edge[e][0]][i];
 
                             ddata[edge[e][0]] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][0]] = 1;
+                            generated[edge[e][0]] = true;
                         } /* Simulating the first node of the edge given the second */
 
                         if (!generated[edge[e][1]]) { /* Simulating the second node of the edge given the first */
                             /* Creating the probability distribution first */
                             if (edge[e][0] < dim)
                                 temp_value = ddata[edge[e][0]];
-                            else if (prev_datum)
+                            else if (prev_datum != null)
                                 temp_value = prev_datum.ddata[dim_index[edge[e][0] - dim]];
                             else
                                 temp_value = missing_value((int) 0);
@@ -8945,7 +8928,7 @@ public class Distribution {
                                     prob_vector[i] = ind_prob[edge[e][1]][i];
 
                             ddata[edge[e][1]] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][1]] = 1;
+                            generated[edge[e][1]] = true;
                         } /* Simulating the second node of the edge given the first */
                     } /* Only one node needs to be simulated */
                 }
@@ -8971,12 +8954,12 @@ public class Distribution {
                     /* Already performed burn-off */
                     num_gibbs_sims = GIBBS_LAG;
                 else { /* Need to perform the burn-off first */
-                    is_sim_initialized = 1;
+                    is_sim_initialized = true;
                     last_sim = new int[dim];
 
                     /* Initializing at random */
                     for (int i = 0; i < dim; i++)
-                        if  (Constants.drand48() > 0.5)
+                        if (Constants.drand48() > 0.5)
                             last_sim[i] = 1;
                         else
                             last_sim[i] = 0;
@@ -8998,7 +8981,7 @@ public class Distribution {
                                 sum += sigma[j][i];
 
                         /* Sampling */
-                        if  (Constants.drand48() < 1.0 / (exp(sum) + 1.0))
+                        if (Constants.drand48() < 1.0 / (exp(sum) + 1.0))
                             last_sim[i] = 0;
                         else
                             last_sim[i] = 1;
@@ -9018,7 +9001,7 @@ public class Distribution {
                             sum += sigma[sim_order[i]][j];
 
                     /* Sampling */
-                    if  (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
+                    if (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
                         sim.ddata[dim_index[sim_order[i]]] = 0;
                     else
                         sim.ddata[dim_index[sim_order[i]]] = 1;
@@ -9026,8 +9009,8 @@ public class Distribution {
                 break;
             case DIST_BN_CME_BIVAR:
                 for (int i = 0; i < dim; i++)
-                    if (!prev_datum) { /* First entry in a sequence -- using state_prob */
-                        if  (Constants.drand48() < state_prob[i])
+                    if (prev_datum == null) { /* First entry in a sequence -- using state_prob */
+                        if (Constants.drand48() < state_prob[i])
                             sim.ddata[dim_index[i]] = 1;
                         else
                             sim.ddata[dim_index[i]] = 0;
@@ -9044,26 +9027,28 @@ public class Distribution {
                             }
 
                         /* Sampling */
-                        if  (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
+                        if (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
                             sim.ddata[dim_index[sim_order[i]]] = 0;
                         else
                             sim.ddata[dim_index[sim_order[i]]] = 1;
                     }
                 break;
-            case DIST_DELTAEXP:
-                i = generateBernoulli(mix_prob, num_states);
+            case DIST_DELTAEXP: {
+                int i = generateBernoulli(mix_prob, num_states);
                 if (i == 0)
                     sim.rdata[dim_index[0]] = 0.0;
                 else
                     sim.rdata[dim_index[0]] = generateExponential(exp_param[i - 1]);
-                break;
-            case DIST_DELTAGAMMA:
-                i = generateBernoulli(mix_prob, num_states);
+            }
+            break;
+            case DIST_DELTAGAMMA: {
+                int i = generateBernoulli(mix_prob, num_states);
                 if (i == 0)
                     sim.rdata[dim_index[0]] = 0.0;
                 else
                     sim.rdata[dim_index[0]] = generateGamma(gamma_param1[i - 1], gamma_param2[i - 1]);
-                break;
+            }
+            break;
             case DIST_DIRACDELTA:
                 sim.rdata[dim_index[0]] = delta_value;
                 break;
@@ -9075,8 +9060,8 @@ public class Distribution {
                 break;
             case DIST_NORMAL:
                 /* If Cholesky decomposition is not computed yet, doing so now */
-                if (!chol_sigma) {
-                    chol_sigma = new double *[dim];
+                if (chol_sigma == null) {
+                    chol_sigma = new double[dim][];
                     for (int i = 0; i < dim; i++)
                         chol_sigma[i] = new double[dim];
 
@@ -9091,15 +9076,15 @@ public class Distribution {
                 break;
             case DIST_NORMALCHAIN:
                 /* If Cholesky decomposition is not computed yet, doing so now */
-                if (!chol_sigma) {
-                    chol_sigma = new double *[dim];
+                if (chol_sigma == null) {
+                    chol_sigma = new double[dim][];
                     for (int i = 0; i < dim; i++)
                         chol_sigma[i] = new double[dim];
 
                     cholesky(sigma, dim, chol_sigma);
                 }
-                if (!chol_first_sigma) {
-                    chol_first_sigma = new double *[dim];
+                if (chol_first_sigma == null) {
+                    chol_first_sigma = new double[dim][];
                     for (int i = 0; i < dim; i++)
                         chol_first_sigma[i] = new double[dim];
 
@@ -9108,7 +9093,7 @@ public class Distribution {
 
                 rdata = new double[dim];
 
-                if (prev_datum) { /* Not the first observation in the sequence */
+                if (prev_datum != null) { /* Not the first observation in the sequence */
 
                     /* Allocating mean vector */
                     prob_vector = new double[dim];
@@ -9135,8 +9120,8 @@ public class Distribution {
             case DIST_NORMALCL:
                 /* !!! May be replaced by more efficient sampling !!! */
                 /* If Cholesky decomposition is not computed yet, doing so now */
-                if (!chol_sigma) {
-                    chol_sigma = new double *[dim];
+                if (chol_sigma == null) {
+                    chol_sigma = new double[dim][];
                     for (int i = 0; i < dim; i++)
                         chol_sigma[i] = new double[dim];
 
@@ -9159,6 +9144,8 @@ public class Distribution {
         }
 
     }
+
+    static final boolean DISABLED = true;
 
     void SimulateMissingEntries(DataPoint datum, DataPoint prev_datum) {
         /* Simulating an observation according to distribution */
@@ -9185,7 +9172,7 @@ public class Distribution {
                 prob = new double[num_states];
 
                 /* Allocating additional variables */
-                mult = new double [dim][];
+                mult = new double[dim][];
                 for (int i = 0; i < dim; i++)
                     mult[i] = new double[num_states];
 
@@ -9194,12 +9181,12 @@ public class Distribution {
                 /* Precomputing probability values for components */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_states; j++)
-                        mult[i][j] = subdist[i][j].prob(datum, prev_datum);
+                        mult[i][j] = subdist[i][j].log_prob(datum, prev_datum);
 
                 for (int env = 0; env < num_envelopes; env++)
                     /* For each envelope */
                     if (envelope[env].num_nodes == 1) { /* Envelope contains exactly one variable. */
-                        m1 = envelope[env].node[0];
+                        int m1 = envelope[env].node[0];
                         sum = 0.0;
                         for (int b = 0; b < num_states; b++) { /* Summing over the latent variable */
                             prob[b] = ind_prob[m1][b] * mult[m1][b];
@@ -9218,21 +9205,21 @@ public class Distribution {
                     } /* Envelope contains exactly one missing variable. */ else { /* Envelope contains more than one variable. */
                         /* Propagating probabilities in a backward pass */
                         for (int e = envelope[env].num_edges - 1; e >= 0; e--) {
-                            ei = envelope[env].edge[e];
-                            i1 = edge[ei][0];
-                            i2 = edge[ei][1];
+                            int ei = envelope[env].edge[e];
+                            int i1 = edge[ei][0];
+                            int i2 = edge[ei][1];
 
                             if (envelope[env].node[e + 1] == i2) { /* i1 is the parent of i2 */
-                                for (value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
+                                for (int value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
                                     sum = 0.0;
-                                    for (value2 = 0; value2 < num_states; value2++)
+                                    for (int value2 = 0; value2 < num_states; value2++)
                                         sum += mult[i2][value2] * edge_prob[ei][value1][value2];
                                     mult[i1][value1] *= sum / ind_prob[i1][value1];
                                 } /* Computing the contribution to i1 with value value1 from child i2 */
                             } /* i1 is the parent of i2 */ else { /* i2 is the parent of i1 */
-                                for (value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
+                                for (int value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
                                     sum = 0.0;
-                                    for (value1 = 0; value1 < num_states; value1++)
+                                    for (int value1 = 0; value1 < num_states; value1++)
                                         sum += mult[i1][value1] * edge_prob[ei][value1][value2];
                                     mult[i2][value2] *= sum / ind_prob[i2][value2];
                                 } /* Computing the contribution to i2 with value value2 from child i1 */
@@ -9240,7 +9227,7 @@ public class Distribution {
                         }
 
                         /* Summing over the root of the envelope */
-                        m1 = envelope[env].node[0];
+                        int m1 = envelope[env].node[0];
                         sum = 0.0;
                         for (int b = 0; b < num_states; b++) { /* Summing over the latent variable */
                             prob[b] = mult[m1][b] * ind_prob[m1][b];
@@ -9259,9 +9246,9 @@ public class Distribution {
 
                         /* Backward pass */
                         for (int e = 0; e < envelope[env].num_edges; e++) {
-                            ei = envelope[env].edge[e];
-                            i1 = edge[ei][0];
-                            i2 = edge[ei][1];
+                            int ei = envelope[env].edge[e];
+                            int i1 = edge[ei][0];
+                            int i2 = edge[ei][1];
 
                             if (envelope[env].node[e + 1] == i2) { /* i1 is the parent of i2 */
                                 sum = 0.0;
@@ -9312,20 +9299,20 @@ public class Distribution {
                 break;
             case DIST_BERNOULLI:
                 if (dim == 1) {
-                    if (subdist) {
+                    if (subdist != null) {
                         prob = new double[num_states];
 
                         /* Computing posterior probabilities */
                         sum = 0.0;
                         for (int b = 0; b < num_states; b++) {
-                            prob[b] = state_prob[b] * subdist[0][b].prob(datum, prev_datum);
+                            prob[b] = state_prob[b] * subdist[0][b].log_prob(datum, prev_datum);
                             sum += prob[b];
                         }
                         for (int b = 0; b < num_states; b++)
                             prob[b] /= sum;
 
                         /* Picking a mixture component */
-                        i = generateBernoulli(prob, num_states);
+                        int i = generateBernoulli(prob, num_states);
 
                         /* Simulating a data point from the component */
                         subdist[0][i].SimulateMissingEntries(datum, prev_datum);
@@ -9339,7 +9326,7 @@ public class Distribution {
             case DIST_CONDBERNOULLIG:
                 if (dim == 1)
                     if (is_missing(datum.ddata[dim_index[0]])) {
-                        if (prev_datum)
+                        if (prev_datum != null)
                             /* Not the first sequence entry */
                             datum.ddata[dim_index[0]] = generateBernoulli(cond_state_prob[prev_datum.ddata[dim_index[0]]], num_states);
                         else
@@ -9355,7 +9342,7 @@ public class Distribution {
                 prob = new double[num_states];
 
                 /* Allocating additional variables */
-                mult = new double *[dim];
+                mult = new double[dim][];
                 for (int i = 0; i < dim; i++)
                     mult[i] = new double[num_states];
 
@@ -9366,7 +9353,7 @@ public class Distribution {
                     /* For each envelope */
                     if (is_missing(datum.ddata[dim_index[envelope[env].node[0]]])) { /* Envelope contains missing values */
                         if (envelope[env].num_nodes == 1) { /* Envelope contains exactly one missing variable. */
-                            m1 = envelope[env].node[0];
+                            int m1 = envelope[env].node[0];
                             sum = 0.0;
                             for (int b = 0; b < num_states; b++) { /* Summing over the missing variable */
                                 prob[b] = ind_prob[m1][b] * mult[m1][b];
@@ -9386,22 +9373,22 @@ public class Distribution {
 
                             /* Propagating probabilities in a backward pass */
                             for (int e = envelope[env].num_edges - 1; e >= 0; e--) {
-                                ei = envelope[env].edge[e];
-                                i1 = edge[ei][0];
-                                i2 = edge[ei][1];
+                                int ei = envelope[env].edge[e];
+                                int i1 = edge[ei][0];
+                                int i2 = edge[ei][1];
 
                                 /* Both nodes are missing. */
                                 if (envelope[env].node[e + 1] == i2) { /* i1 is the parent of i2 */
-                                    for (value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
+                                    for (int value1 = 0; value1 < num_states; value1++) { /* Computing the contribution to i1 with value value1 from child i2 */
                                         sum = 0.0;
-                                        for (value2 = 0; value2 < num_states; value2++)
+                                        for (int value2 = 0; value2 < num_states; value2++)
                                             sum += mult[i2][value2] * edge_prob[ei][value1][value2];
                                         mult[i1][value1] *= sum / ind_prob[i1][value1];
                                     } /* Computing the contribution to i1 with value value1 from child i2 */
                                 } /* i1 is the parent of i2 */ else { /* i2 is the parent of i1 */
-                                    for (value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
+                                    for (int value2 = 0; value2 < num_states; value2++) { /* Computing the contribution to i2 with value value2 from child i1 */
                                         sum = 0.0;
-                                        for (value1 = 0; value1 < num_states; value1++)
+                                        for (int value1 = 0; value1 < num_states; value1++)
                                             sum += mult[i1][value1] * edge_prob[ei][value1][value2];
                                         mult[i2][value2] *= sum / ind_prob[i2][value2];
                                     } /* Computing the contribution to i2 with value value2 from child i1 */
@@ -9409,7 +9396,7 @@ public class Distribution {
                             }
 
                             /* Summing over the root of the envelope */
-                            m1 = envelope[env].node[0];
+                            int m1 = envelope[env].node[0];
                             sum = 0.0;
                             for (int b = 0; b < num_states; b++) {
                                 prob[b] = mult[m1][b] * ind_prob[m1][b];
@@ -9424,9 +9411,9 @@ public class Distribution {
 
                             /* Backward pass */
                             for (int e = 0; e < envelope[env].num_edges; e++) {
-                                ei = envelope[env].edge[e];
-                                i1 = edge[ei][0];
-                                i2 = edge[ei][1];
+                                int ei = envelope[env].edge[e];
+                                int i1 = edge[ei][0];
+                                int i2 = edge[ei][1];
 
                                 if (is_missing(datum.ddata[i1])) { /* First node is missing */
                                     sum = 0.0;
@@ -9468,497 +9455,481 @@ public class Distribution {
             case DIST_CONDCHOWLIU:
                 /* Do not know how to do that yet */
                 break;
-            if (BLAH) {
-    /* When generating the model, assuming that postprocessing step is run as well.
-       Generating the nodes in the order in which they appear in the edges. */
-
-                ddata = new int[dim];
-
-                generated = new int[2 * dim];
-                for (int i = 0; i < dim; i++) {
-                    generated[i] = 1;
-                    generated[i + dim] = 0;
-                }
-
-                prob_vector = new double[num_states];
-
-                for (int e = 0; e < num_edges; e++) {
-	/* Two possibilities:
-	   both nodes need to be simulated, or just one */
-                    if (!generated[edge[e][0]] && !generated[edge[e][1]]) { /* Both nodes need to be simulated */
-                        /* Simulating the first node of the edge */
-                        ddata[edge[e][0] - dim] = generateBernoulli(ind_prob[edge[e][0]], num_states);
-                        generated[edge[e][0]] = 1;
-
-                        /* Simulating the second node of the edge */
-                        /* Creating the probability distribution first */
-                        for (int i = 0; i < num_states; i++)
-                            prob_vector[i] = edge_prob[e][ddata[edge[e][0] - dim]][i] /
-                                    ind_prob[edge[e][0] - dim][ddata[edge[e][0] - dim]];
-
-                        ddata[edge[e][1] - dim] = generateBernoulli(prob_vector, num_states);
-                        generated[edge[e][1]] = 1;
-                    } /* Both nodes need to be simulated */ else { /* Only one node needs to be simulated */
-                        if (!generated[edge[e][0]]) { /* Simulating the first node of the edge given the second */
-                            /* Creating the probability distribution first */
-                            if (edge[e][1] < dim)
-                                if (prev_datum)
-                                    temp_value = prev_datum.ddata[dim_index[edge[e][1]]];
-                                else
-                                    temp_value = missing_value((int) 0);
-                            else
-                                temp_value = ddata[edge[e][1] - dim];
-
-                            if (!is_missing(temp_value))
-                                for (int i = 0; i < num_states; i++)
-                                    prob_vector[i] = edge_prob[e][i][temp_value] / ind_prob[edge[e][1]][temp_value];
-                            else
-                                for (int i = 0; i < num_states; i++)
-                                    prob_vector[i] = ind_prob[edge[e][0]][i];
-
-                            ddata[edge[e][0] - dim] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][0]] = 1;
-                        } /* Simulating the first node of the edge given the second */
-
-                        if (!generated[edge[e][1]]) { /* Simulating the second node of the edge given the first */
-                            /* Creating the probability distribution first */
-                            if (edge[e][0] < dim)
-                                if (prev_datum)
-                                    temp_value = prev_datum.ddata[dim_index[edge[e][0]]];
-                                else
-                                    temp_value = missing_value((int) 0);
-                            else
-                                temp_value = ddata[edge[e][0] - dim];
-
-                            if (!is_missing(temp_value))
-                                for (int i = 0; i < num_states; i++)
-                                    prob_vector[i] = edge_prob[e][temp_value][i] / ind_prob[edge[e][0]][temp_value];
-                            else
-                                for (int i = 0; i < num_states; i++)
-                                    prob_vector[i] = ind_prob[edge[e][1]][i];
-
-                            ddata[edge[e][1] - dim] = generateBernoulli(prob_vector, num_states);
-                            generated[edge[e][1]] = 1;
-                        } /* Simulating the second node of the edge given the first */
-                    } /* Only one node needs to be simulated */
-                }
-
-                /* Making sure all nodes have been simulated */
-                for (int i = dim; i < 2 * dim; i++)
-                    if (!generated[i])
-                        /* Simulating the node form individual probabilities */
-                        ddata[i - dim] = generateBernoulli(ind_prob[i], num_states);
-
-                prob_vector = null;
-
-                generated = null;
-
-                for (int i = 0; i < dim; i++)
-                    sim.ddata[dim_index[i]] = ddata[i];
-                ddata = null;
-
-                break;
-            }
+//            if (BLAH) {
+//    /* When generating the model, assuming that postprocessing step is run as well.
+//       Generating the nodes in the order in which they appear in the edges. */
+//
+//                ddata = new int[dim];
+//
+//                generated = new int[2 * dim];
+//                for (int i = 0; i < dim; i++) {
+//                    generated[i] = 1;
+//                    generated[i + dim] = 0;
+//                }
+//
+//                prob_vector = new double[num_states];
+//
+//                for (int e = 0; e < num_edges; e++) {
+//	/* Two possibilities:
+//	   both nodes need to be simulated, or just one */
+//                    if (!generated[edge[e][0]] && !generated[edge[e][1]]) { /* Both nodes need to be simulated */
+//                        /* Simulating the first node of the edge */
+//                        ddata[edge[e][0] - dim] = generateBernoulli(ind_prob[edge[e][0]], num_states);
+//                        generated[edge[e][0]] = 1;
+//
+//                        /* Simulating the second node of the edge */
+//                        /* Creating the probability distribution first */
+//                        for (int i = 0; i < num_states; i++)
+//                            prob_vector[i] = edge_prob[e][ddata[edge[e][0] - dim]][i] /
+//                                    ind_prob[edge[e][0] - dim][ddata[edge[e][0] - dim]];
+//
+//                        ddata[edge[e][1] - dim] = generateBernoulli(prob_vector, num_states);
+//                        generated[edge[e][1]] = 1;
+//                    } /* Both nodes need to be simulated */ else { /* Only one node needs to be simulated */
+//                        if (!generated[edge[e][0]]) { /* Simulating the first node of the edge given the second */
+//                            /* Creating the probability distribution first */
+//                            if (edge[e][1] < dim)
+//                                if (prev_datum)
+//                                    temp_value = prev_datum.ddata[dim_index[edge[e][1]]];
+//                                else
+//                                    temp_value = missing_value((int) 0);
+//                            else
+//                                temp_value = ddata[edge[e][1] - dim];
+//
+//                            if (!is_missing(temp_value))
+//                                for (int i = 0; i < num_states; i++)
+//                                    prob_vector[i] = edge_prob[e][i][temp_value] / ind_prob[edge[e][1]][temp_value];
+//                            else
+//                                for (int i = 0; i < num_states; i++)
+//                                    prob_vector[i] = ind_prob[edge[e][0]][i];
+//
+//                            ddata[edge[e][0] - dim] = generateBernoulli(prob_vector, num_states);
+//                            generated[edge[e][0]] = 1;
+//                        } /* Simulating the first node of the edge given the second */
+//
+//                        if (!generated[edge[e][1]]) { /* Simulating the second node of the edge given the first */
+//                            /* Creating the probability distribution first */
+//                            if (edge[e][0] < dim)
+//                                if (prev_datum)
+//                                    temp_value = prev_datum.ddata[dim_index[edge[e][0]]];
+//                                else
+//                                    temp_value = missing_value((int) 0);
+//                            else
+//                                temp_value = ddata[edge[e][0] - dim];
+//
+//                            if (!is_missing(temp_value))
+//                                for (int i = 0; i < num_states; i++)
+//                                    prob_vector[i] = edge_prob[e][temp_value][i] / ind_prob[edge[e][0]][temp_value];
+//                            else
+//                                for (int i = 0; i < num_states; i++)
+//                                    prob_vector[i] = ind_prob[edge[e][1]][i];
+//
+//                            ddata[edge[e][1] - dim] = generateBernoulli(prob_vector, num_states);
+//                            generated[edge[e][1]] = 1;
+//                        } /* Simulating the second node of the edge given the first */
+//                    } /* Only one node needs to be simulated */
+//                }
+//
+//                /* Making sure all nodes have been simulated */
+//                for (int i = dim; i < 2 * dim; i++)
+//                    if (!generated[i])
+//                        /* Simulating the node form individual probabilities */
+//                        ddata[i - dim] = generateBernoulli(ind_prob[i], num_states);
+//
+//                prob_vector = null;
+//
+//                generated = null;
+//
+//                for (int i = 0; i < dim; i++)
+//                    sim.ddata[dim_index[i]] = ddata[i];
+//                ddata = null;
+//
+//                break;
+//            }
             case DIST_ME_BIVAR:
                 /* Not yet implemented */
                 break;
-            if (BLAH) {
-                /* Simulation by Gibbs sampling */
-                if (is_sim_initialized)
-                    /* Already performed burn-off */
-                    num_gibbs_sims = GIBBS_LAG;
-                else { /* Need to perform the burn-off first */
-                    is_sim_initialized = 1;
-                    last_sim = new int[dim];
-
-                    /* Initializing at random */
-                    for (int i = 0; i < dim; i++)
-                        if  (Constants.drand48() > 0.5)
-                            last_sim[i] = 1;
-                        else
-                            last_sim[i] = 0;
-
-                    num_gibbs_sims = GIBBS_BURNIN;
-                } /* Need to perform the burn-off first */
-
-                for (int sim_index = 0; sim_index < num_gibbs_sims; sim_index++)
-                    /* Performing Gibbs sampling */
-                    for (int i = 0; i < dim; i++) { /* Resampling component i */
-                        /* Calculating probability of outcome 0: 1/(exp(sum)+1) */
-                        sum = 0.0;
-                        for (int j = 0; j < i; j++)
-                            if (last_sim[j] == 1)
-                                sum += sigma[i][j];
-                        sum += sigma[i][i];
-                        for (int j = i + 1; j < dim; j++)
-                            if (last_sim[j] == 1)
-                                sum += sigma[j][i];
-
-                        /* Sampling */
-                        if  (Constants.drand48() < 1.0 / (exp(sum) + 1.0))
-                            last_sim[i] = 0;
-                        else
-                            last_sim[i] = 1;
-                    } /* Resampling component i */
-
-                /* Copying the last sample into the output */
-                for (int i = 0; i < dim; i++)
-                    sim.ddata[dim_index[i]] = last_sim[i];
-            }
+//            if (BLAH) {
+//                /* Simulation by Gibbs sampling */
+//                if (is_sim_initialized)
+//                    /* Already performed burn-off */
+//                    num_gibbs_sims = GIBBS_LAG;
+//                else { /* Need to perform the burn-off first */
+//                    is_sim_initialized = true;
+//                    last_sim = new int[dim];
+//
+//                    /* Initializing at random */
+//                    for (int i = 0; i < dim; i++)
+//                        if (Constants.drand48() > 0.5)
+//                            last_sim[i] = 1;
+//                        else
+//                            last_sim[i] = 0;
+//
+//                    num_gibbs_sims = GIBBS_BURNIN;
+//                } /* Need to perform the burn-off first */
+//
+//                for (int sim_index = 0; sim_index < num_gibbs_sims; sim_index++)
+//                    /* Performing Gibbs sampling */
+//                    for (int i = 0; i < dim; i++) { /* Resampling component i */
+//                        /* Calculating probability of outcome 0: 1/(exp(sum)+1) */
+//                        sum = 0.0;
+//                        for (int j = 0; j < i; j++)
+//                            if (last_sim[j] == 1)
+//                                sum += sigma[i][j];
+//                        sum += sigma[i][i];
+//                        for (int j = i + 1; j < dim; j++)
+//                            if (last_sim[j] == 1)
+//                                sum += sigma[j][i];
+//
+//                        /* Sampling */
+//                        if (Constants.drand48() < 1.0 / (exp(sum) + 1.0))
+//                            last_sim[i] = 0;
+//                        else
+//                            last_sim[i] = 1;
+//                    } /* Resampling component i */
+//
+//                /* Copying the last sample into the output */
+//                for (int i = 0; i < dim; i++)
+//                    sim.ddata[dim_index[i]] = last_sim[i];
+//            }
             case DIST_BN_ME_BIVAR:
                 /* Not yet implemented */
                 break;
-            if (BLAH) {
-                for (int i = 0; i < dim; i++) {
-                    /* Computing the probability of outcome 0: 1/(exp(sum)+1) */
-                    sum = sigma[sim_order[i]][0];
-                    for (int j = 1; j < num_features[sim_order[i]]; j++)
-                        if (sim.ddata[dim_index[feature_index[sim_order[i]][j]]] == 1)
-                            sum += sigma[sim_order[i]][j];
-
-                    /* Sampling */
-                    if  (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
-                        sim.ddata[dim_index[sim_order[i]]] = 0;
-                    else
-                        sim.ddata[dim_index[sim_order[i]]] = 1;
-                }
-                break;
-            }
+//            if (BLAH) {
+//                for (int i = 0; i < dim; i++) {
+//                    /* Computing the probability of outcome 0: 1/(exp(sum)+1) */
+//                    sum = sigma[sim_order[i]][0];
+//                    for (int j = 1; j < num_features[sim_order[i]]; j++)
+//                        if (sim.ddata[dim_index[feature_index[sim_order[i]][j]]] == 1)
+//                            sum += sigma[sim_order[i]][j];
+//
+//                    /* Sampling */
+//                    if (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
+//                        sim.ddata[dim_index[sim_order[i]]] = 0;
+//                    else
+//                        sim.ddata[dim_index[sim_order[i]]] = 1;
+//                }
+//                break;
+//            }
             case DIST_BN_CME_BIVAR:
                 /* Do not know how to perform this */
                 break;
-            if (BLAH) {
-                for (int i = 0; i < dim; i++)
-                    if (!prev_datum) { /* First entry in a sequence -- using state_prob */
-                        if  (Constants.drand48() < state_prob[i])
-                            sim.ddata[dim_index[i]] = 1;
-                        else
-                            sim.ddata[dim_index[i]] = 0;
-                    } /* First entry in a sequence -- using state_prob */ else {
-                        /* Computing the probability of outcome 0: 1/(exp(sum)+1) */
-                        sum = sigma[sim_order[i]][0];
-                        for (int j = 1; j < num_features[sim_order[i]]; j++)
-                            if (feature_index[sim_order[i]][j] < dim) {
-                                if (sim.ddata[dim_index[feature_index[sim_order[i]][j]]] == 1)
-                                    sum += sigma[sim_order[i]][j];
-                            } else {
-                                if (prev_datum.ddata[dim_index[feature_index[sim_order[i]][j] - dim]] == 1)
-                                    sum += sigma[sim_order[i]][j];
-                            }
-
-                        /* Sampling */
-                        if  (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
-                            sim.ddata[dim_index[sim_order[i]]] = 0;
-                        else
-                            sim.ddata[dim_index[sim_order[i]]] = 1;
-                    }
-                break;
-                case DIST_DELTAEXP:
-                    i = generateBernoulli(mix_prob, num_states);
-                    if (i == 0)
-                        sim.rdata[dim_index[0]] = 0.0;
-                    else
-                        sim.rdata[dim_index[0]] = generateExponential(exp_param[i - 1]);
-                    break;
-                case DIST_DELTAGAMMA:
-                    i = generateBernoulli(mix_prob, num_states);
-                    if (i == 0)
-                        sim.rdata[dim_index[0]] = 0.0;
-                    else
-                        sim.rdata[dim_index[0]] = generateGamma(gamma_param1[i - 1], gamma_param2[i - 1]);
-                    break;
-                case DIST_DIRACDELTA:
-                    sim.rdata[dim_index[0]] = delta_value;
-                    break;
-                case DIST_EXP:
-                    sim.rdata[dim_index[0]] = generateExponential(exp_param1);
-                    break;
-                case DIST_GAMMA:
-                    sim.rdata[dim_index[0]] = generateGamma(gamma1, gamma2);
-                    break;
-                case DIST_NORMAL:
-                    /* If Cholesky decomposition is not computed yet, doing so now */
-                    if (!chol_sigma) {
-                        chol_sigma = new double *[dim];
-                        for (int i = 0; i < dim; i++)
-                            chol_sigma[i] = new double[dim];
-
-                        cholesky(sigma, dim, chol_sigma);
-                    }
-
-                    rdata = new double[dim];
-                    SimulateNormal(mu, chol_sigma, rdata, dim);
-                    for (int i = 0; i < dim; i++)
-                        sim.rdata[dim_index[i]] = rdata[i];
-                    rdata = null;
-                    break;
-                case DIST_NORMALCHAIN:
-                    /* If Cholesky decomposition is not computed yet, doing so now */
-                    if (!chol_sigma) {
-                        chol_sigma = new double *[dim];
-                        for (int i = 0; i < dim; i++)
-                            chol_sigma[i] = new double[dim];
-
-                        cholesky(sigma, dim, chol_sigma);
-                    }
-                    if (!chol_first_sigma) {
-                        chol_first_sigma = new double *[dim];
-                        for (int i = 0; i < dim; i++)
-                            chol_first_sigma[i] = new double[dim];
-
-                        cholesky(first_sigma, dim, chol_first_sigma);
-                    }
-
-                    rdata = new double[dim];
-
-                    if (prev_datum) { /* Not the first observation in the sequence */
-
-                        /* Allocating mean vector */
-                        prob_vector = new double[dim];
-
-                        /* Calculating the value for the mean vector */
-                        for (int i = 0; i < dim; i++) {
-                            prob_vector[i] = mu[i];
-                            for (int e = 0; e < dim; e++)
-                                prob_vector[i] += W[i][e] * prev_datum.rdata[dim_index[e]];
-                        }
-
-                        SimulateNormal(prob_vector, chol_sigma, rdata, dim);
-
-                        prob_vector = null;
-                    } /* Not the first observation in the sequence */ else
-                        /* First observation in the sequence */
-                        SimulateNormal(first_mu, chol_first_sigma, rdata, dim);
-
-                    for (int i = 0; i < dim; i++)
-                        sim.rdata[dim_index[i]] = rdata[i];
-                    rdata = null;
-
-                    break;
-                case DIST_NORMALCL:
-                    /* !!! May be replaced by more efficient sampling !!! */
-                    /* If Cholesky decomposition is not computed yet, doing so now */
-                    if (!chol_sigma) {
-                        chol_sigma = new double *[dim];
-                        for (int i = 0; i < dim; i++)
-                            chol_sigma[i] = new double[dim];
-
-                        cholesky(sigma, dim, chol_sigma);
-                    }
-
-                    rdata = new double[dim];
-                    SimulateNormal(mu, chol_sigma, rdata, dim);
-                    for (int i = 0; i < dim; i++)
-                        sim.rdata[dim_index[i]] = rdata[i];
-                    rdata = null;
-                    break;
-                case DIST_LOGISTIC:
-                case DIST_TRANSLOGISTIC:
-                    System.err.format("Simulation from the logistic data is not yet implemented!\n");
-                    System.exit(-1);
-                    break;
-            }
+//            if (BLAH) {
+//                for (int i = 0; i < dim; i++)
+//                    if (!prev_datum) { /* First entry in a sequence -- using state_prob */
+//                        if (Constants.drand48() < state_prob[i])
+//                            sim.ddata[dim_index[i]] = 1;
+//                        else
+//                            sim.ddata[dim_index[i]] = 0;
+//                    } /* First entry in a sequence -- using state_prob */ else {
+//                        /* Computing the probability of outcome 0: 1/(exp(sum)+1) */
+//                        sum = sigma[sim_order[i]][0];
+//                        for (int j = 1; j < num_features[sim_order[i]]; j++)
+//                            if (feature_index[sim_order[i]][j] < dim) {
+//                                if (sim.ddata[dim_index[feature_index[sim_order[i]][j]]] == 1)
+//                                    sum += sigma[sim_order[i]][j];
+//                            } else {
+//                                if (prev_datum.ddata[dim_index[feature_index[sim_order[i]][j] - dim]] == 1)
+//                                    sum += sigma[sim_order[i]][j];
+//                            }
+//
+//                        /* Sampling */
+//                        if (Constants.drand48() < 1.0 / (1.0 + exp(sum)))
+//                            sim.ddata[dim_index[sim_order[i]]] = 0;
+//                        else
+//                            sim.ddata[dim_index[sim_order[i]]] = 1;
+//                    }
+//                break;
+//                case DIST_DELTAEXP:
+//                    i = generateBernoulli(mix_prob, num_states);
+//                    if (i == 0)
+//                        sim.rdata[dim_index[0]] = 0.0;
+//                    else
+//                        sim.rdata[dim_index[0]] = generateExponential(exp_param[i - 1]);
+//                    break;
+//                case DIST_DELTAGAMMA:
+//                    i = generateBernoulli(mix_prob, num_states);
+//                    if (i == 0)
+//                        sim.rdata[dim_index[0]] = 0.0;
+//                    else
+//                        sim.rdata[dim_index[0]] = generateGamma(gamma_param1[i - 1], gamma_param2[i - 1]);
+//                    break;
+//                case DIST_DIRACDELTA:
+//                    sim.rdata[dim_index[0]] = delta_value;
+//                    break;
+//                case DIST_EXP:
+//                    sim.rdata[dim_index[0]] = generateExponential(exp_param1);
+//                    break;
+//                case DIST_GAMMA:
+//                    sim.rdata[dim_index[0]] = generateGamma(gamma1, gamma2);
+//                    break;
+//                case DIST_NORMAL:
+//                    /* If Cholesky decomposition is not computed yet, doing so now */
+//                    if (chol_sigma == null) {
+//                        chol_sigma = new double[dim][];
+//                        for (int i = 0; i < dim; i++)
+//                            chol_sigma[i] = new double[dim];
+//
+//                        cholesky(sigma, dim, chol_sigma);
+//                    }
+//
+//                    rdata = new double[dim];
+//                    SimulateNormal(mu, chol_sigma, rdata, dim);
+//                    for (int i = 0; i < dim; i++)
+//                        sim.rdata[dim_index[i]] = rdata[i];
+//                    rdata = null;
+//                    break;
+//                case DIST_NORMALCHAIN:
+//                    /* If Cholesky decomposition is not computed yet, doing so now */
+//                    if (chol_sigma == null) {
+//                        chol_sigma = new double[dim][];
+//                        for (int i = 0; i < dim; i++)
+//                            chol_sigma[i] = new double[dim];
+//
+//                        cholesky(sigma, dim, chol_sigma);
+//                    }
+//                    if (chol_first_sigma == null) {
+//                        chol_first_sigma = new double[dim][];
+//                        for (int i = 0; i < dim; i++)
+//                            chol_first_sigma[i] = new double[dim];
+//
+//                        cholesky(first_sigma, dim, chol_first_sigma);
+//                    }
+//
+//                    rdata = new double[dim];
+//
+//                    if (prev_datum) { /* Not the first observation in the sequence */
+//
+//                        /* Allocating mean vector */
+//                        prob_vector = new double[dim];
+//
+//                        /* Calculating the value for the mean vector */
+//                        for (int i = 0; i < dim; i++) {
+//                            prob_vector[i] = mu[i];
+//                            for (int e = 0; e < dim; e++)
+//                                prob_vector[i] += W[i][e] * prev_datum.rdata[dim_index[e]];
+//                        }
+//
+//                        SimulateNormal(prob_vector, chol_sigma, rdata, dim);
+//
+//                        prob_vector = null;
+//                    } /* Not the first observation in the sequence */ else
+//                        /* First observation in the sequence */
+//                        SimulateNormal(first_mu, chol_first_sigma, rdata, dim);
+//
+//                    for (int i = 0; i < dim; i++)
+//                        sim.rdata[dim_index[i]] = rdata[i];
+//                    rdata = null;
+//
+//                    break;
+//                case DIST_NORMALCL:
+//                    /* !!! May be replaced by more efficient sampling !!! */
+//                    /* If Cholesky decomposition is not computed yet, doing so now */
+//                    if (!chol_sigma) {
+//                        chol_sigma = new double *[dim];
+//                        for (int i = 0; i < dim; i++)
+//                            chol_sigma[i] = new double[dim];
+//
+//                        cholesky(sigma, dim, chol_sigma);
+//                    }
+//
+//                    rdata = new double[dim];
+//                    SimulateNormal(mu, chol_sigma, rdata, dim);
+//                    for (int i = 0; i < dim; i++)
+//                        sim.rdata[dim_index[i]] = rdata[i];
+//                    rdata = null;
+//                    break;
+//                case DIST_LOGISTIC:
+//                case DIST_TRANSLOGISTIC:
+//                    System.err.format("Simulation from the logistic data is not yet implemented!\n");
+//                    System.exit(-1);
+//                    break;
+//            }
             default:
         }
 
     }
 
-    void UpdateEmissionBernoulli(Data data,double[][]prob_s){
+    void UpdateEmissionBernoulli(Data data, double[][] prob_s) {
         /* !!! Univariate Bernoulli !!! */
 
-        double[][][]mix_comp_prob;
+        double[][][] mix_comp_prob = null;
 
-        double[]state_count;
-        double weight_missing=0.0;
+        double[] state_count;
+        double weight_missing = 0.0;
 
-        double[]current_prob;    // Probability weight for the current example
+        double[] current_prob;    // Probability weight for the current example
 
         /* Flags */
         //  int leave_unchanged=0;  // Underflow flag
 
         /* Temporary variables */
         double sum;
-        double[]value_contrib;
+        double[] value_contrib;
         double max_value;
 
-        state_count=new double[num_states];
-        current_prob=new double[num_states];
-        value_contrib=new double[num_states];
+        state_count = new double[num_states];
+        current_prob = new double[num_states];
+        value_contrib = new double[num_states];
 
-        for (int b =0;b<num_states; b++)
-            state_count[b]=0.0;
+        for (int b = 0; b < num_states; b++)
+            state_count[b] = 0.0;
 
-        if(subdist != null)
-        { /* Mixture components present */
+        if (subdist != null) { /* Mixture components present */
             /* Allocating P(mixing component|data) */
-            mix_comp_prob=new double[num_states][][];
-            for (int b =0;b<num_states; b++)
-            {
-                mix_comp_prob[b]=new double[data.num_seqs][];
-                for (int n =0;n<data.num_seqs;n++)
-                    mix_comp_prob[b][n]=new double[data.sequence[n].seq_length];
+            mix_comp_prob = new double[num_states][][];
+            for (int b = 0; b < num_states; b++) {
+                mix_comp_prob[b] = new double[data.num_seqs][];
+                for (int n = 0; n < data.num_seqs; n++)
+                    mix_comp_prob[b][n] = new double[data.sequence[n].seq_length];
             }
         } /* Mixture components present */
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(subdist!=null)
-                { /* Mixture components */
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (subdist != null) { /* Mixture components */
                     /* !!! Assuming univariate multinomial !!! */
-                    max_value=NEG_INF;
-                    for (int b =0;b<num_states; b++)
-                    {
-                        value_contrib[b]=log_state_prob[b];
-                        if(t==0)
-                            value_contrib[b]+=subdist[0][b].log_prob(data.sequence[n].entry[t],null);
+                    max_value = NEG_INF;
+                    for (int b = 0; b < num_states; b++) {
+                        value_contrib[b] = log_state_prob[b];
+                        if (t == 0)
+                            value_contrib[b] += subdist[0][b].log_prob(data.sequence[n].entry[t], null);
                         else
-                            value_contrib[b]+=subdist[0][b].log_prob(data.sequence[n].entry[t],data.sequence[n].entry[t-1]);
-                        if(value_contrib[b]>max_value)
-                            max_value=value_contrib[b];
+                            value_contrib[b] += subdist[0][b].log_prob(data.sequence[n].entry[t], data.sequence[n].entry[t - 1]);
+                        if (value_contrib[b] > max_value)
+                            max_value = value_contrib[b];
                     }
 
-                    sum=0.0;
-                    for (int b =0;b<num_states; b++)
-                    {
-                        mix_comp_prob[b][n][t]=exp(value_contrib[b]-max_value);
-                        sum+=mix_comp_prob[b][n][t];
+                    sum = 0.0;
+                    for (int b = 0; b < num_states; b++) {
+                        mix_comp_prob[b][n][t] = exp(value_contrib[b] - max_value);
+                        sum += mix_comp_prob[b][n][t];
                     }
 
-                    for (int b =0;b<num_states; b++)
-                    {
-                        mix_comp_prob[b][n][t]/=sum;
-                        mix_comp_prob[b][n][t]*=prob_s[n][t];
-                        state_count[b]+=mix_comp_prob[b][n][t];
+                    for (int b = 0; b < num_states; b++) {
+                        mix_comp_prob[b][n][t] /= sum;
+                        mix_comp_prob[b][n][t] *= prob_s[n][t];
+                        state_count[b] += mix_comp_prob[b][n][t];
                     }
-                } /* Mixture components */
-                else
-                if(!is_missing(data.sequence[n].entry[t].ddata[dim_index[0]]))
+                } /* Mixture components */ else if (!is_missing(data.sequence[n].entry[t].ddata[dim_index[0]]))
                     /* Not missing */
-                    state_count[data.sequence[n].entry[t].ddata[dim_index[0]]]+=prob_s[n][t];
+                    state_count[data.sequence[n].entry[t].ddata[dim_index[0]]] += prob_s[n][t];
                 else
                     /* Missing */
-                    weight_missing+=prob_s[n][t];
+                    weight_missing += prob_s[n][t];
 
-        if(subdist !=null)
-            for (int b =0;b<num_states; b++)
+        if (subdist != null)
+            for (int b = 0; b < num_states; b++)
                 /* Passing unnormalized weight to the mixture components */
-                if(abs(state_count[b])>COMP_THRESHOLD)
+                if (abs(state_count[b]) > COMP_THRESHOLD)
                     /* Updating mixture components */
-                    subdist[0][b].UpdateEmissionParameters(data,mix_comp_prob[b],state_count[b]);
+                    subdist[0][b].UpdateEmissionParameters(data, mix_comp_prob[b], state_count[b]);
 
         /* Incorporating the prior and normalizing the probabilities */
-        sum=0.0;
-        for (int b =0;b<num_states; b++)
-        {
-            state_count[b]+=pcount_single[b];
-            state_prob[b]=state_count[b]+state_prob[b]*weight_missing;
-            sum+=state_prob[b];
+        sum = 0.0;
+        for (int b = 0; b < num_states; b++) {
+            state_count[b] += pcount_single[b];
+            state_prob[b] = state_count[b] + state_prob[b] * weight_missing;
+            sum += state_prob[b];
         }
 
-        for (int b =0;b<num_states; b++)
-            state_prob[b]/=sum;
-        for (int b =0;b<num_states; b++)
-            log_state_prob[b]=log(state_prob[b]);
+        for (int b = 0; b < num_states; b++)
+            state_prob[b] /= sum;
+        for (int b = 0; b < num_states; b++)
+            log_state_prob[b] = log(state_prob[b]);
 
         value_contrib = null;
         current_prob = null;
         state_count = null;
 
-        if(subdist!=null)
-        { /* Mixture components present */
+        if (subdist != null) { /* Mixture components present */
 
             /* Deallocating P(mixing component|X,S) */
-            for (int b =0;b<num_states; b++)
-            {
-                for (int n =0;n<data.num_seqs;n++)
-                    mix_comp_prob[b][n] = null;
-                mix_comp_prob[b] = null;
-            }
+            if (mix_comp_prob != null)
+                for (int b = 0; b < num_states; b++) {
+                    for (int n = 0; n < data.num_seqs; n++)
+                        mix_comp_prob[b][n] = null;
+                    mix_comp_prob[b] = null;
+                }
             mix_comp_prob = null;
         } /* Mixture components present */
 
         return;
     }
 
-    void UpdateEmissionConditionalBernoulli(Data data,double[][]prob_s,int is_averaged){
+    void UpdateEmissionConditionalBernoulli(Data data, double[][] prob_s, boolean is_averaged) {
         /* Unvariate conditional Bernoulli */
 
         /* Temporary variable(s) */
         double sum;
 
-        for (int b =0;b<num_states; b++)
-        {
+        for (int b = 0; b < num_states; b++) {
             /* First sequence entry probabilities */
-            state_prob[b]=0.0;
-            for (int n =0;n<data.num_seqs;n++)
-            {
-                if(data.sequence[n].entry[0].ddata[dim_index[0]]==b)
-                    state_prob[b]+=prob_s[n][0];
+            state_prob[b] = 0.0;
+            for (int n = 0; n < data.num_seqs; n++) {
+                if (data.sequence[n].entry[0].ddata[dim_index[0]] == b)
+                    state_prob[b] += prob_s[n][0];
 
-                for (int t =1;t<data.sequence[n].seq_length;t++)
-                {
-                    if(data.sequence[n].entry[t].ddata[dim_index[0]]==b)
-                        cond_state_prob[data.sequence[n].entry[t-1].ddata[dim_index[0]]][b]+=prob_s[n][t];
+                for (int t = 1; t < data.sequence[n].seq_length; t++) {
+                    if (data.sequence[n].entry[t].ddata[dim_index[0]] == b)
+                        cond_state_prob[data.sequence[n].entry[t - 1].ddata[dim_index[0]]][b] += prob_s[n][t];
 
-                    if(is_averaged)
-                        if(data.sequence[n].entry[t].ddata[dim_index[0]]==b)
-                            state_prob[b]+=prob_s[n][t];
+                    if (is_averaged)
+                        if (data.sequence[n].entry[t].ddata[dim_index[0]] == b)
+                            state_prob[b] += prob_s[n][t];
                 }
             }
         }
 
         /* Normalizing */
-        sum=0.0;
-        for (int b =0;b<num_states; b++)
-        {
+        sum = 0.0;
+        for (int b = 0; b < num_states; b++) {
             /* Adding the prior counts */
-            state_prob[b]+=pcount_single[b];
-            sum+=state_prob[b];
+            state_prob[b] += pcount_single[b];
+            sum += state_prob[b];
         }
-        for (int b =0;b<num_states; b++)
-            state_prob[b]/=sum;
-        for (int b =0;b<num_states; b++)
-            log_state_prob[b]=log(state_prob[b]);
+        for (int b = 0; b < num_states; b++)
+            state_prob[b] /= sum;
+        for (int b = 0; b < num_states; b++)
+            log_state_prob[b] = log(state_prob[b]);
 
-        for (int i =0;i<num_states; i++)
-        {
-            sum=0.0;
-            for (int j =0;j<num_states; j++)
-            {
+        for (int i = 0; i < num_states; i++) {
+            sum = 0.0;
+            for (int j = 0; j < num_states; j++) {
                 /* Adding the prior counts */
-                cond_state_prob[i][j]+=pcount_uni[i][j];
-                sum+=cond_state_prob[i][j];
+                cond_state_prob[i][j] += pcount_uni[i][j];
+                sum += cond_state_prob[i][j];
             }
-            for (int j =0;j<num_states; j++)
-                cond_state_prob[i][j]/=sum;
+            for (int j = 0; j < num_states; j++)
+                cond_state_prob[i][j] /= sum;
         }
 
-        for (int i =0;i<num_states; i++)
-            for (int j =0;j<num_states; j++)
-                log_cond_state_prob[i][j]=log(cond_state_prob[i][j]);
+        for (int i = 0; i < num_states; i++)
+            for (int j = 0; j < num_states; j++)
+                log_cond_state_prob[i][j] = log(cond_state_prob[i][j]);
 
         return;
     }
 
-    void UpdateEmissionChowLiu(Data data,double[][]prob_s){
+    void UpdateEmissionChowLiu(Data data, double[][] prob_s) {
 
-        double[][][][]pair_prob;         // Projection on the pair of the variables   
-        double[][]MI;                  // Mutual information
+        double[][][][] pair_prob;         // Projection on the pair of the variables
+        double[][] MI;                  // Mutual information
         double best_MI;               // Best value of mutual information in the current pass
-        int[]best_edge;              // The list of current best edges
+        int[] best_edge;              // The list of current best edges
 
-        double[][]cond_prob;
-        double[][]temp_ind_prob;       // Future individual probabilities
+        double[][] cond_prob;
+        double[][] temp_ind_prob;       // Future individual probabilities
 
         /* Updates */
-        double[][]mult;                // Total update from instantiated nodes
-        double[][]sent_backward;       // Update sent in a backward pass (to the parent)
-        double[][]received_backward;   // Total update received from uninstantiated children
-        double[][]received_forward;    // Update sent in a forward pass (from the parent)
+        double[][] mult;                // Total update from instantiated nodes
+        double[][] sent_backward;       // Update sent in a backward pass (to the parent)
+        double[][] received_backward;   // Total update received from uninstantiated children
+        double[][] received_forward;    // Update sent in a forward pass (from the parent)
 
-        int[]visited;                // Indicator of visited variables for bivariate probabilities
+        boolean[] visited;                // Indicator of visited variables for bivariate probabilities
 
-        double[][][][]mix_weight;        // Weights for mixture components
+        double[][][][] mix_weight = null;        // Weights for mixture components
         double norm_const;            // Normalization constant
 
 //        int node,node1,node2;        // Node (variable) indices
@@ -9972,45 +9943,40 @@ public class Distribution {
 //        int e;                       // Edge index
 
         /* Temporary variable(s) */
-        double sum;
+        double sum = 0;
         DataPoint datum;
-        double[]temp_cond_prob;
-        double[][]temp_received_backward;
-        double[][]temp_sent_backward;
+        double[] temp_cond_prob;
+        double[][] temp_received_backward;
+        double[][] temp_sent_backward;
 
         /* Allocating the array of individual probabilities */
-        temp_ind_prob=new double[dim][];
-        for (int node =0;node<dim; node++)
-            temp_ind_prob[node]=new double[num_states];
+        temp_ind_prob = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            temp_ind_prob[node] = new double[num_states];
 
         /* Allocating the array of pairwise probabilities */
-        pair_prob=new double[dim][][][];
-        for(int node1=0;node1<dim; node1++)
-        {
-            pair_prob[node1]=new double[node1][][];
-            for(int node2=0;node2<node1; node2++)
-            {
-                pair_prob[node1][node2]=new double[num_states][];
-                for (int b =0;b<num_states; b++)
-                    pair_prob[node1][node2][b]=new double[num_states];
+        pair_prob = new double[dim][][][];
+        for (int node1 = 0; node1 < dim; node1++) {
+            pair_prob[node1] = new double[node1][][];
+            for (int node2 = 0; node2 < node1; node2++) {
+                pair_prob[node1][node2] = new double[num_states][];
+                for (int b = 0; b < num_states; b++)
+                    pair_prob[node1][node2][b] = new double[num_states];
             }
         }
 
         /* Array of best edges */
-        best_edge=new int[dim-1];
+        best_edge = new int[dim - 1];
 
-        if(subdist != null)
-        { /* Mixture */
+        if (subdist != null) { /* Mixture */
             /* Allocating weights for mixture components */
-            mix_weight=new double[dim][][][];
-            for (int node =0;node<dim; node++)
-            {
-                mix_weight[node]=new double[num_states][][];
-                for (int b =0;b<num_states; b++)
-                {
-                    mix_weight[node][b]=new double[data.num_seqs][];
-                    for (int n =0;n<data.num_seqs;n++)
-                        mix_weight[node][b][n]=new double[data.sequence[n].seq_length];
+            mix_weight = new double[dim][][][];
+            for (int node = 0; node < dim; node++) {
+                mix_weight[node] = new double[num_states][][];
+                for (int b = 0; b < num_states; b++) {
+                    mix_weight[node][b] = new double[data.num_seqs][];
+                    for (int n = 0; n < data.num_seqs; n++)
+                        mix_weight[node][b][n] = new double[data.sequence[n].seq_length];
                 }
             }
         } /* Mixture */
@@ -10018,467 +9984,418 @@ public class Distribution {
         /* Initializing */
 
         /* Individual probability projections */
-        for (int node =0;node<dim; node++)
-            for (int b =0;b<num_states; b++)
-                temp_ind_prob[node][b]=0.0;
+        for (int node = 0; node < dim; node++)
+            for (int b = 0; b < num_states; b++)
+                temp_ind_prob[node][b] = 0.0;
 
         /* Pairwise probability projections */
-        for(int node1=0;node1<dim; node1++)
-            for(int node2=0;node2<node1; node2++)
-                for(int b1=0;b1<num_states; b1++)
-                    for(int b2=0;b2<num_states; b2++)
-                        pair_prob[node1][node2][b1][b2]=0.0;
+        for (int node1 = 0; node1 < dim; node1++)
+            for (int node2 = 0; node2 < node1; node2++)
+                for (int b1 = 0; b1 < num_states; b1++)
+                    for (int b2 = 0; b2 < num_states; b2++)
+                        pair_prob[node1][node2][b1][b2] = 0.0;
 
         /* Initializing structures for count collection */
 
         /* Multiplication factor for each node */
-        mult=new double[dim][];
-        for (int node =0;node<dim; node++)
-            mult[node]=new double[num_states];
+        mult = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            mult[node] = new double[num_states];
 
-        sent_backward=new double[dim][];
-        for (int node =0;node<dim; node++)
-            sent_backward[node]=new double[num_states];
-        received_backward=new double[dim][];
-        for (int node =0;node<dim; node++)
-            received_backward[node]=new double[num_states];
-        received_forward=new double[dim][];
-        for (int node =0;node<dim; node++)
-            received_forward[node]=new double[num_states];
-        cond_prob=new double[dim][];
-        for (int node =0;node<dim; node++)
-            cond_prob[node]=new double[num_states];
-        temp_cond_prob=new double[num_states];
-        temp_sent_backward=new double[dim][];
-        for (int node =0;node<dim; node++)
-            temp_sent_backward[node]=new double[num_states];
-        temp_received_backward=new double[dim][];
-        for (int node =0;node<dim; node++)
-            temp_received_backward[node]=new double[num_states];
-        visited=new int[dim];
+        sent_backward = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            sent_backward[node] = new double[num_states];
+        received_backward = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            received_backward[node] = new double[num_states];
+        received_forward = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            received_forward[node] = new double[num_states];
+        cond_prob = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            cond_prob[node] = new double[num_states];
+        temp_cond_prob = new double[num_states];
+        temp_sent_backward = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            temp_sent_backward[node] = new double[num_states];
+        temp_received_backward = new double[dim][];
+        for (int node = 0; node < dim; node++)
+            temp_received_backward[node] = new double[num_states];
+        visited = new boolean[dim];
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-            { /* For each example, computing its contribution to pairwise probabilities */
-                datum=data.sequence[n].entry[t];
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++) { /* For each example, computing its contribution to pairwise probabilities */
+                datum = data.sequence[n].entry[t];
 
                 /* Computing multiplicative factor for each node */
-                if(subdist != null)
+                if (subdist != null)
                     /* Mixture */
-                    for (int node =0;node<dim; node++)
-                        for (int b =0;b<num_states; b++)
-                            if(t==0)
-                                mult[node][b]=exp(subdist[node][b].log_prob(datum,null));
+                    for (int node = 0; node < dim; node++)
+                        for (int b = 0; b < num_states; b++)
+                            if (t == 0)
+                                mult[node][b] = exp(subdist[node][b].log_prob(datum, null));
                             else
-                                mult[node][b]=exp(subdist[node][b].log_prob(datum,data.sequence[n].entry[t-1]));
+                                mult[node][b] = exp(subdist[node][b].log_prob(datum, data.sequence[n].entry[t - 1]));
 
-                if(subdist==null)
+                if (subdist == null)
                     /* Computing the envelopes */
-                    num_envelopes=compute_envelopes(datum,mult);
+                    num_envelopes = compute_envelopes(datum, mult);
 
                 /* Computing posterior probabilities for missing values */
-                for (int env =0;env<num_envelopes; env++)
+                for (int env = 0; env < num_envelopes; env++)
                     /* For each envelope */
-                    if(envelope[env].is_missing&&envelope[env].num_nodes==1)
-                    { /* Envelope contains exactly one missing variable. */
-                        root_node=envelope[env].node[0];
-                        sum=0.0;
-                        for (int b =0;b<num_states; b++)
-                        {/* Summing over the missing variable */
-                            sum+=ind_prob[root_node][b]*mult[root_node][b];
+                    if (envelope[env].is_missing && envelope[env].num_nodes == 1) { /* Envelope contains exactly one missing variable. */
+                        int root_node = envelope[env].node[0];
+                        sum = 0.0;
+                        for (int b = 0; b < num_states; b++) {/* Summing over the missing variable */
+                            sum += ind_prob[root_node][b] * mult[root_node][b];
                         } /* Summing over the missing variable */
 
-                        for (int b =0;b<num_states; b++)
-                            cond_prob[root_node][b]=ind_prob[root_node][b]*mult[root_node][b]/sum;
-                    } /* Envelope contains exactly one missing variable. */
-                    else if(envelope[env].is_missing&&envelope[env].num_nodes>1)
-                    { /* Envelope contains more than one missing variable. */
-	      
+                        for (int b = 0; b < num_states; b++)
+                            cond_prob[root_node][b] = ind_prob[root_node][b] * mult[root_node][b] / sum;
+                    } /* Envelope contains exactly one missing variable. */ else if (envelope[env].is_missing && envelope[env].num_nodes > 1) { /* Envelope contains more than one missing variable. */
+
 	      /* Initializing multiplicative contributions of leaves connected to each
 		 missing variable */
-                        for (int node =0;node<envelope[env].num_nodes;node++)
-                            for (int b =0;b<num_states; b++)
+                        for (int node = 0; node < envelope[env].num_nodes; node++)
+                            for (int b = 0; b < num_states; b++)
                                 /* No need to initialize sent messages. */
-                                received_backward[envelope[env].node[node]][b]=1.0;
-	      /* No need to initialize received message in the forward pass 
+                                received_backward[envelope[env].node[node]][b] = 1.0;
+	      /* No need to initialize received message in the forward pass
 		 since it is received from one source. */
 
                         /* Propagating contributions in a backward pass */
-                        for (int e =envelope[env].num_edges-1;e>=0;e--)
-                        { /* Edges in a backwards pass */
-                            int node1=edge[envelope[env].edge[e]][0];
-                            int node2=edge[envelope[env].edge[e]][1];
+                        for (int e = envelope[env].num_edges - 1; e >= 0; e--) { /* Edges in a backwards pass */
+                            int node1 = edge[envelope[env].edge[e]][0];
+                            int node2 = edge[envelope[env].edge[e]][1];
 
                             /* Both nodes are missing. */
-                            if(envelope[env].node[e+1]==node2)
-                            { /* node1 is the parent of node2 */
+                            if (envelope[env].node[e + 1] == node2) { /* node1 is the parent of node2 */
                                 /* Rescaling received_backward for node2 */
-                                sum=0.0;
-                                for(int b2=0;b2<num_states; b2++)
-                                    sum+=received_backward[node2][b2];
-                                for(int b2=0;b2<num_states; b2++)
-                                    received_backward[node2][b2]/=sum;
+                                sum = 0.0;
+                                for (int b2 = 0; b2 < num_states; b2++)
+                                    sum += received_backward[node2][b2];
+                                for (int b2 = 0; b2 < num_states; b2++)
+                                    received_backward[node2][b2] /= sum;
 
                                 /* Updating contributions to node1 */
-                                for(int b1=0;b1<num_states; b1++)
-                                { /* Computing the contribution to node1 with value b1 from child node2 */
-                                    sent_backward[node2][b1]=0.0;
-                                    for(int b2=0;b2<num_states; b2++)
-                                        sent_backward[node2][b1]+=
-                                                mult[node2][b2]*received_backward[node2][b2]*edge_prob[envelope[env].edge[e]][b1][b2]/ind_prob[node1][b1];
+                                for (int b1 = 0; b1 < num_states; b1++) { /* Computing the contribution to node1 with value b1 from child node2 */
+                                    sent_backward[node2][b1] = 0.0;
+                                    for (int b2 = 0; b2 < num_states; b2++)
+                                        sent_backward[node2][b1] +=
+                                                mult[node2][b2] * received_backward[node2][b2] * edge_prob[envelope[env].edge[e]][b1][b2] / ind_prob[node1][b1];
                                     /* Updating the parent */
-                                    received_backward[node1][b1]*=sent_backward[node2][b1];
+                                    received_backward[node1][b1] *= sent_backward[node2][b1];
                                 } /* Computing the contribution to node1 with value b1 from child node2 */
-                            } /* node1 is the parent of node2 */
-                            else
-                            { /* node2 is the parent of node1 */
+                            } /* node1 is the parent of node2 */ else { /* node2 is the parent of node1 */
                                 /* Rescaling received_backward for node1 */
-                                sum=0.0;
-                                for(int b1=0;b1<num_states; b1++)
-                                    sum+=received_backward[node1][b1];
-                                for(int b1=0;b1<num_states; b1++)
-                                    received_backward[node1][b1]/=sum;
+                                sum = 0.0;
+                                for (int b1 = 0; b1 < num_states; b1++)
+                                    sum += received_backward[node1][b1];
+                                for (int b1 = 0; b1 < num_states; b1++)
+                                    received_backward[node1][b1] /= sum;
 
                                 /* Updating contributions to node2 */
-                                for(int b2=0;b2<num_states; b2++)
-                                { /* Computing the contribution to node2 with value b2 from child node1 */
-                                    sent_backward[node1][b2]=0.0;
-                                    for(int b1=0;b1<num_states; b1++)
-                                        sent_backward[node1][b2]+=
-                                                mult[node1][b1]*received_backward[node1][b1]*edge_prob[envelope[env].edge[e]][b1][b2]/ind_prob[node2][b2];
+                                for (int b2 = 0; b2 < num_states; b2++) { /* Computing the contribution to node2 with value b2 from child node1 */
+                                    sent_backward[node1][b2] = 0.0;
+                                    for (int b1 = 0; b1 < num_states; b1++)
+                                        sent_backward[node1][b2] +=
+                                                mult[node1][b1] * received_backward[node1][b1] * edge_prob[envelope[env].edge[e]][b1][b2] / ind_prob[node2][b2];
                                     /* Updating the parent */
-                                    received_backward[node2][b2]*=sent_backward[node1][b2];
+                                    received_backward[node2][b2] *= sent_backward[node1][b2];
                                 } /* Computing the contribution to node2 with value b2 from child node1 */
                             } /* node2 is the parent of node1 */
                         } /* Edges in a backwards pass */
 
                         /* Updating the root of the envelope */
-                        int root_node=envelope[env].node[0];
+                        int root_node = envelope[env].node[0];
                         /* Rescaling received_backward for m1 */
-                        sum=0.0;
-                        for (int b =0;b<num_states; b++)
-                            sum+=received_backward[root_node][b];
-                        for (int b =0;b<num_states; b++)
-                            received_backward[root_node][b]/=sum;
+                        sum = 0.0;
+                        for (int b = 0; b < num_states; b++)
+                            sum += received_backward[root_node][b];
+                        for (int b = 0; b < num_states; b++)
+                            received_backward[root_node][b] /= sum;
 
-                        sum=0.0;
-                        for (int b =0;b<num_states; b++)
-                        {
-                            received_forward[root_node][b]=
-                                    ind_prob[root_node][b]*mult[root_node][b]*received_backward[root_node][b];
-                            cond_prob[root_node][b]=received_forward[root_node][b];
-                            sum+=cond_prob[root_node][b];
+                        sum = 0.0;
+                        for (int b = 0; b < num_states; b++) {
+                            received_forward[root_node][b] =
+                                    ind_prob[root_node][b] * mult[root_node][b] * received_backward[root_node][b];
+                            cond_prob[root_node][b] = received_forward[root_node][b];
+                            sum += cond_prob[root_node][b];
                         }
 
                         /* Normalizing */
-                        for (int b =0;b<num_states; b++)
-                            cond_prob[root_node][b]/=sum;
+                        for (int b = 0; b < num_states; b++)
+                            cond_prob[root_node][b] /= sum;
 
                         /* Forwards pass */
-                        for (int e =0;e<envelope[env].num_edges;e++)
-                        { /* Edges in a forward pass */
-                            int node1=edge[envelope[env].edge[e]][0];
-                            int node2=edge[envelope[env].edge[e]][1];
+                        for (int e = 0; e < envelope[env].num_edges; e++) { /* Edges in a forward pass */
+                            int node1 = edge[envelope[env].edge[e]][0];
+                            int node2 = edge[envelope[env].edge[e]][1];
 
                             /* Both variables are missing */
-                            if(envelope[env].node[e+1]==node2)
-                            { /* node1 is the parent of node2 */
+                            if (envelope[env].node[e + 1] == node2) { /* node1 is the parent of node2 */
                                 /* Computing update from node1 to node2 */
-                                for(int b2=0;b2<num_states; b2++)
-                                {
-                                    received_forward[node2][b2]=0.0;
-                                    for(int b1=0;b1<num_states; b1++)
-                                        received_forward[node2][b2]+=
-                                                received_forward[node1][b1]*(edge_prob[envelope[env].edge[e]][b1][b2]/(ind_prob[node2][b2]*ind_prob[node1][b1]))
-                                                        /sent_backward[node2][b1];
+                                for (int b2 = 0; b2 < num_states; b2++) {
+                                    received_forward[node2][b2] = 0.0;
+                                    for (int b1 = 0; b1 < num_states; b1++)
+                                        received_forward[node2][b2] +=
+                                                received_forward[node1][b1] * (edge_prob[envelope[env].edge[e]][b1][b2] / (ind_prob[node2][b2] * ind_prob[node1][b1]))
+                                                        / sent_backward[node2][b1];
                                 }
 
                                 /* Computing the conditional probability for node2 */
-                                sum=0.0;
-                                for(int b2=0;b2<num_states; b2++)
-                                {
-                                    received_forward[node2][b2]*=ind_prob[node2][b2]*mult[node2][b2]*received_backward[node2][b2];
-                                    cond_prob[node2][b2]=received_forward[node2][b2];
-                                    sum+=cond_prob[node2][b2];
+                                sum = 0.0;
+                                for (int b2 = 0; b2 < num_states; b2++) {
+                                    received_forward[node2][b2] *= ind_prob[node2][b2] * mult[node2][b2] * received_backward[node2][b2];
+                                    cond_prob[node2][b2] = received_forward[node2][b2];
+                                    sum += cond_prob[node2][b2];
                                 }
 
                                 /* Normalizing */
-                                for(int b2=0;b2<num_states; b2++)
-                                {
-                                    cond_prob[node2][b2]/=sum;
+                                for (int b2 = 0; b2 < num_states; b2++) {
+                                    cond_prob[node2][b2] /= sum;
                                     /* Rescaling received_forward[node2][b2] */
-                                    received_forward[node2][b2]=cond_prob[node2][b2];
+                                    received_forward[node2][b2] = cond_prob[node2][b2];
                                 }
-                            } /* node1 is the parent of node2 */
-                            else
-                            { /* node2 is the parent of node1 */
+                            } /* node1 is the parent of node2 */ else { /* node2 is the parent of node1 */
                                 /* Computing update from node2 to node1 */
-                                for(int b1=0;b1<num_states; b1++)
-                                {
-                                    received_forward[node1][b1]=0.0;
-                                    for(int b2=0;b2<num_states; b2++)
-                                        received_forward[node1][b1]+=
-                                                received_forward[node2][b2]*(edge_prob[envelope[env].edge[e]][b1][b2]/(ind_prob[node1][b1]*ind_prob[node2][b2]))
-                                                        /sent_backward[node1][b2];
+                                for (int b1 = 0; b1 < num_states; b1++) {
+                                    received_forward[node1][b1] = 0.0;
+                                    for (int b2 = 0; b2 < num_states; b2++)
+                                        received_forward[node1][b1] +=
+                                                received_forward[node2][b2] * (edge_prob[envelope[env].edge[e]][b1][b2] / (ind_prob[node1][b1] * ind_prob[node2][b2]))
+                                                        / sent_backward[node1][b2];
                                 }
 
                                 /* Computing the conditional probability for node1 */
-                                sum=0.0;
-                                for(int b1=0;b1<num_states; b1++)
-                                {
-                                    received_forward[node1][b1]*=ind_prob[node1][b1]*mult[node1][b1]*received_backward[node1][b1];
-                                    cond_prob[node1][b1]=received_forward[node1][b1];
-                                    sum+=cond_prob[node1][b1];
+                                sum = 0.0;
+                                for (int b1 = 0; b1 < num_states; b1++) {
+                                    received_forward[node1][b1] *= ind_prob[node1][b1] * mult[node1][b1] * received_backward[node1][b1];
+                                    cond_prob[node1][b1] = received_forward[node1][b1];
+                                    sum += cond_prob[node1][b1];
                                 }
 
                                 /* Normalizing */
-                                for(int b1=0;b1<num_states; b1++)
-                                {
-                                    cond_prob[node1][b1]/=sum;
+                                for (int b1 = 0; b1 < num_states; b1++) {
+                                    cond_prob[node1][b1] /= sum;
                                     /* Rescaling received forward[node1][b1] */
-                                    received_forward[node1][b1]=cond_prob[node1][b1];
+                                    received_forward[node1][b1] = cond_prob[node1][b1];
                                 }
                             } /* node2 is the parent of node1 */
                         } /* Edges in a forward pass */
 
                         /* Computing bivariate probabilities by setting a value of each node and completing the inference */
 
-                        for (int node_index =envelope[env].num_nodes-1;node_index>=1;node_index--)
-                        { /* Looping over nodes of the envelope */
+                        for (int node_index = envelope[env].num_nodes - 1; node_index >= 1; node_index--) { /* Looping over nodes of the envelope */
 
                             /* One of the node for which to compute bivariate probabilities */
-                            int node1_bi=envelope[env].node[node_index];
+                            int node1_bi = envelope[env].node[node_index];
 
                             /* Finding the edge with node1_bi as a child */
-                            int last_edge=node_index-1;
+                            int last_edge = node_index - 1;
 
-                            for (int b_bi =0;b_bi<num_states; b_bi++)
-                            { /* Looping on the value of the current missing node */
+                            for (int b_bi = 0; b_bi < num_states; b_bi++) { /* Looping on the value of the current missing node */
                                 /* Assigning the value for the last node */
                                 /* Resetting visited indicator */
-                                for (int node =0;node<node_index; node++)
-                                    visited[envelope[env].node[node]]=0;
+                                for (int node = 0; node < node_index; node++)
+                                    visited[envelope[env].node[node]] = false;
 
-                                int ei=envelope[env].edge[last_edge];
-                               int  node1=edge[envelope[env].edge[last_edge]][0];
-                               int  node2=edge[envelope[env].edge[last_edge]][1];
+                                int ei = envelope[env].edge[last_edge];
+                                int node1 = edge[envelope[env].edge[last_edge]][0];
+                                int node2 = edge[envelope[env].edge[last_edge]][1];
 
                                 /* Updating the parent of the current node */
-                                if(node2==node1_bi)
-                                { /* node1 is the parent of the current node */
+                                if (node2 == node1_bi) { /* node1 is the parent of the current node */
                                     /* Computing the contributions from the current node */
-                                    for(int b1=0;b1<num_states; b1++)
-                                    {
-                                        temp_sent_backward[node2][b1]=edge_prob[ei][b1][b_bi]/ind_prob[node1][b1];
+                                    for (int b1 = 0; b1 < num_states; b1++) {
+                                        temp_sent_backward[node2][b1] = edge_prob[ei][b1][b_bi] / ind_prob[node1][b1];
 
                                         /* Recomputing parent's received_backward value */
-                                        temp_received_backward[node1][b1]=
-                                                received_backward[node1][b1]*temp_sent_backward[node2][b1]/sent_backward[node2][b1];
+                                        temp_received_backward[node1][b1] =
+                                                received_backward[node1][b1] * temp_sent_backward[node2][b1] / sent_backward[node2][b1];
                                     }
-                                    visited[node1]=1;
-                                } /* node1 is the parent of the current node */
-                                else
-                                { /* node2 is the parent of the current node */
+                                    visited[node1] = true;
+                                } /* node1 is the parent of the current node */ else { /* node2 is the parent of the current node */
                                     /* Computing the contributions from the current node */
-                                    for(int b2=0;b2<num_states; b2++)
-                                    {
-                                        temp_sent_backward[node1][b2]=edge_prob[ei][b_bi][b2]/ind_prob[node2][b2];
+                                    for (int b2 = 0; b2 < num_states; b2++) {
+                                        temp_sent_backward[node1][b2] = edge_prob[ei][b_bi][b2] / ind_prob[node2][b2];
 
                                         /* Recomputing parent's received_backward value */
-                                        temp_received_backward[node2][b2]=
-                                                received_backward[node2][b2]*temp_sent_backward[node1][b2]/sent_backward[node1][b2];
+                                        temp_received_backward[node2][b2] =
+                                                received_backward[node2][b2] * temp_sent_backward[node1][b2] / sent_backward[node1][b2];
                                     }
 
-                                    visited[node2]=1;
+                                    visited[node2] = true;
                                 } /* node2 is the parent of the current node */
 
                                 /* Propagating contributions in a backward pass */
-                                for (int e =last_edge-1;e>=0;e--)
-                                { /* Edges in a backwards pass */
-                                   int  ei=envelope[env].edge[e];
-                                  int   node1=edge[ei][0];
-                                  int   node2=edge[ei][1];
+                                for (int e = last_edge - 1; e >= 0; e--) { /* Edges in a backwards pass */
+                                    ei = envelope[env].edge[e];
+                                    node1 = edge[ei][0];
+                                    node2 = edge[ei][1];
 
                                     /* Both nodes are missing. */
-                                    if(envelope[env].node[e+1]==node2)
+                                    if (envelope[env].node[e + 1] == node2)
                                         /* node1 is the parent of node2 */
 
                                         /* Updating contributions to node1 */
-                                        if(visited[node2])
-                                        { /* node2 is on the path from changed node */
+                                        if (visited[node2]) { /* node2 is on the path from changed node */
                                             /* Rescaling temp_received_backward for node2 */
-                                            sum=0.0;
-                                            for(int b2=0;b2<num_states; b2++)
-                                                sum+=temp_received_backward[node2][b2];
-                                            for(int b2=0;b2<num_states; b2++)
-                                                temp_received_backward[node2][b2]/=sum;
+                                            sum = 0.0;
+                                            for (int b2 = 0; b2 < num_states; b2++)
+                                                sum += temp_received_backward[node2][b2];
+                                            for (int b2 = 0; b2 < num_states; b2++)
+                                                temp_received_backward[node2][b2] /= sum;
 
                                             /* Updating contributions to node1 */
-                                            for(int b1=0;b1<num_states; b1++)
-                                            { /* Updating received_backward for node1 */
-                                                temp_sent_backward[node2][b1]=0.0;
-                                                for(int b2=0;b2<num_states; b2++)
-                                                    temp_sent_backward[node2][b1]+=
-                                                            mult[node2][b2]*temp_received_backward[node2][b2]*edge_prob[ei][b1][b2]/ind_prob[node1][b1];
+                                            for (int b1 = 0; b1 < num_states; b1++) { /* Updating received_backward for node1 */
+                                                temp_sent_backward[node2][b1] = 0.0;
+                                                for (int b2 = 0; b2 < num_states; b2++)
+                                                    temp_sent_backward[node2][b1] +=
+                                                            mult[node2][b2] * temp_received_backward[node2][b2] * edge_prob[ei][b1][b2] / ind_prob[node1][b1];
                                                 /* Updating the parent */
-                                                temp_received_backward[node1][b1]=
-                                                        received_backward[node1][b1]*temp_sent_backward[node2][b1]/sent_backward[node2][b1];
+                                                temp_received_backward[node1][b1] =
+                                                        received_backward[node1][b1] * temp_sent_backward[node2][b1] / sent_backward[node2][b1];
                                             } /* Updating received_backward for node1 */
-                                            visited[node1]=1;
-                                        } /* node2 is on the path from changed node */
-                                        else
-                                        { /* node2 is not on the path from changed node */
+                                            visited[node1] = true;
+                                        } /* node2 is on the path from changed node */ else { /* node2 is not on the path from changed node */
                                             /* Setting temp_sent_backward and temp_received_backward */
-                                            for(int b1=0;b1<num_states; b1++)
-                                                temp_sent_backward[node2][b1]=sent_backward[node2][b1];
-                                            for(int b2=0;b2<num_states; b2++)
-                                                temp_received_backward[node2][b2]=received_backward[node2][b2];
+                                            for (int b1 = 0; b1 < num_states; b1++)
+                                                temp_sent_backward[node2][b1] = sent_backward[node2][b1];
+                                            for (int b2 = 0; b2 < num_states; b2++)
+                                                temp_received_backward[node2][b2] = received_backward[node2][b2];
                                         } /* node2 is not on the path from changed node */
                                     else
                                         /* node2 is the parent of node1 */
 
                                         /* Updating contributions to node2 */
-                                        if(visited[node1])
-                                        { /* node1 is on the path from changed node */
+                                        if (visited[node1]) { /* node1 is on the path from changed node */
                                             /* Rescaling temp_received_backward for node1 */
-                                            sum=0.0;
-                                            for(int b1=0;b1<num_states; b1++)
-                                                sum+=temp_received_backward[node1][b1];
-                                            for(int b1=0;b1<num_states; b1++)
-                                                temp_received_backward[node1][b1]/=sum;
+                                            sum = 0.0;
+                                            for (int b1 = 0; b1 < num_states; b1++)
+                                                sum += temp_received_backward[node1][b1];
+                                            for (int b1 = 0; b1 < num_states; b1++)
+                                                temp_received_backward[node1][b1] /= sum;
 
                                             /* Updating contributions to node2 */
-                                            for(int b2=0;b2<num_states; b2++)
-                                            { /* Updating received_backward for node2 */
-                                                temp_sent_backward[node1][b2]=0.0;
-                                                for(int b1=0;b1<num_states; b1++)
-                                                    temp_sent_backward[node1][b2]+=
-                                                            mult[node1][b1]*temp_received_backward[node1][b1]*edge_prob[ei][b1][b2]/ind_prob[node2][b2];
+                                            for (int b2 = 0; b2 < num_states; b2++) { /* Updating received_backward for node2 */
+                                                temp_sent_backward[node1][b2] = 0.0;
+                                                for (int b1 = 0; b1 < num_states; b1++)
+                                                    temp_sent_backward[node1][b2] +=
+                                                            mult[node1][b1] * temp_received_backward[node1][b1] * edge_prob[ei][b1][b2] / ind_prob[node2][b2];
                                                 /* Updating the parent */
-                                                temp_received_backward[node2][b2]=
-                                                        received_backward[node2][b2]*temp_sent_backward[node1][b2]/sent_backward[node1][b2];
+                                                temp_received_backward[node2][b2] =
+                                                        received_backward[node2][b2] * temp_sent_backward[node1][b2] / sent_backward[node1][b2];
                                             } /* Updating received_backward for node2 */
-                                            visited[node2]=1;
-                                        } /* node1 is on the path from changed node */
-                                        else
-                                        { /* node1 is not on the path from changed node */
+                                            visited[node2] = true;
+                                        } /* node1 is on the path from changed node */ else { /* node1 is not on the path from changed node */
                                             /* Setting temp_sent_backward and temp_received_backward */
-                                            for(int b2=0;b2<num_states; b2++)
-                                                temp_sent_backward[node1][b2]=sent_backward[node1][b2];
-                                            for(int b1=0;b1<num_states; b1++)
-                                                temp_received_backward[node1][b1]=received_backward[node1][b1];
+                                            for (int b2 = 0; b2 < num_states; b2++)
+                                                temp_sent_backward[node1][b2] = sent_backward[node1][b2];
+                                            for (int b1 = 0; b1 < num_states; b1++)
+                                                temp_received_backward[node1][b1] = received_backward[node1][b1];
                                         } /* node1 is not on the path from changed node */
 
                                 } /* Edges in a backwards pass */
 
                                 /* Updating the root of the envelope */
-                                root_node=envelope[env].node[0];
+                                root_node = envelope[env].node[0];
                                 /* Rescaling temp_received_backward for m1 */
-                                sum=0.0;
-                                for (int b =0;b<num_states; b++)
-                                    sum+=temp_received_backward[root_node][b];
-                                for (int b =0;b<num_states; b++)
-                                    temp_received_backward[root_node][b]/=sum;
+                                sum = 0.0;
+                                for (int b = 0; b < num_states; b++)
+                                    sum += temp_received_backward[root_node][b];
+                                for (int b = 0; b < num_states; b++)
+                                    temp_received_backward[root_node][b] /= sum;
 
-                                sum=0.0;
-                                for (int b =0;b<num_states; b++)
-                                {
-                                    received_forward[root_node][b]=
-                                            ind_prob[root_node][b]*mult[root_node][b]*temp_received_backward[root_node][b];
-                                    temp_cond_prob[b]=received_forward[root_node][b];
-                                    sum+=temp_cond_prob[b];
+                                sum = 0.0;
+                                for (int b = 0; b < num_states; b++) {
+                                    received_forward[root_node][b] =
+                                            ind_prob[root_node][b] * mult[root_node][b] * temp_received_backward[root_node][b];
+                                    temp_cond_prob[b] = received_forward[root_node][b];
+                                    sum += temp_cond_prob[b];
                                 }
 
                                 /* Normalizing */
-                                for (int b =0;b<num_states; b++)
-                                    temp_cond_prob[b]/=sum;
+                                for (int b = 0; b < num_states; b++)
+                                    temp_cond_prob[b] /= sum;
 
                                 /* Updating the bivariate count table */
-                                for (int b =0;b<num_states; b++)
-                                    if(root_node>node1_bi)
-                                        pair_prob[root_node][node1_bi][b][b_bi]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
+                                for (int b = 0; b < num_states; b++)
+                                    if (root_node > node1_bi)
+                                        pair_prob[root_node][node1_bi][b][b_bi] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
                                     else
-                                        pair_prob[node1_bi][root_node][b_bi][b]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
+                                        pair_prob[node1_bi][root_node][b_bi][b] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
 
                                 /* Forwards pass */
-                                for (int e =0;e<last_edge; e++)
-                                { /* Edges in a forward pass */
-                                    ei=envelope[env].edge[e];
-                                    node1=edge[ei][0];
-                                    node2=edge[ei][1];
+                                for (int e = 0; e < last_edge; e++) { /* Edges in a forward pass */
+                                    ei = envelope[env].edge[e];
+                                    node1 = edge[ei][0];
+                                    node2 = edge[ei][1];
 
                                     /* Both variables are missing */
-                                    if(envelope[env].node[e+1]==node2)
-                                    { /* node1 is the parent of node2 */
+                                    if (envelope[env].node[e + 1] == node2) { /* node1 is the parent of node2 */
                                         /* Computing update from node1 to node2 */
-                                        for(int b2=0;b2<num_states; b2++)
-                                        {
-                                            received_forward[node2][b2]=0.0;
-                                            for(int b1=0;b1<num_states; b1++)
-                                                received_forward[node2][b2]+=
-                                                        received_forward[node1][b1]*(edge_prob[ei][b1][b2]/(ind_prob[node2][b2]*ind_prob[node1][b1]))
-                                                                /temp_sent_backward[node2][b1];
+                                        for (int b2 = 0; b2 < num_states; b2++) {
+                                            received_forward[node2][b2] = 0.0;
+                                            for (int b1 = 0; b1 < num_states; b1++)
+                                                received_forward[node2][b2] +=
+                                                        received_forward[node1][b1] * (edge_prob[ei][b1][b2] / (ind_prob[node2][b2] * ind_prob[node1][b1]))
+                                                                / temp_sent_backward[node2][b1];
                                         }
 
                                         /* Computing the conditional probability for node2 */
-                                        sum=0.0;
-                                        for (int b =0;b<num_states; b++)
-                                        {
-                                            received_forward[node2][b]*=ind_prob[node2][b]*mult[node2][b]*temp_received_backward[node2][b];
-                                            temp_cond_prob[b]=received_forward[node2][b];
-                                            sum+=temp_cond_prob[b];
+                                        sum = 0.0;
+                                        for (int b = 0; b < num_states; b++) {
+                                            received_forward[node2][b] *= ind_prob[node2][b] * mult[node2][b] * temp_received_backward[node2][b];
+                                            temp_cond_prob[b] = received_forward[node2][b];
+                                            sum += temp_cond_prob[b];
                                         }
 
                                         /* Normalizing */
-                                        for (int b =0;b<num_states; b++)
-                                        {
-                                            temp_cond_prob[b]/=sum;
+                                        for (int b = 0; b < num_states; b++) {
+                                            temp_cond_prob[b] /= sum;
                                             /* Rescaling received_forward[node2][b] */
-                                            received_forward[node2][b]=temp_cond_prob[b];
+                                            received_forward[node2][b] = temp_cond_prob[b];
                                         }
 
                                         /* Updating the bivariate count table */
-                                        for (int b =0;b<num_states; b++)
-                                            if(node2>node1_bi)
-                                                pair_prob[node2][node1_bi][b][b_bi]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
+                                        for (int b = 0; b < num_states; b++)
+                                            if (node2 > node1_bi)
+                                                pair_prob[node2][node1_bi][b][b_bi] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
                                             else
-                                                pair_prob[node1_bi][node2][b_bi][b]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
-                                    } /* node1 is the parent of node2 */
-                                    else
-                                    { /* node2 is the parent of node1 */
+                                                pair_prob[node1_bi][node2][b_bi][b] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
+                                    } /* node1 is the parent of node2 */ else { /* node2 is the parent of node1 */
                                         /* Computing update from node2 to node1 */
-                                        for(int b1=0;b1<num_states; b1++)
-                                        {
-                                            received_forward[node1][b1]=0.0;
-                                            for(int b2=0;b2<num_states; b2++)
-                                                received_forward[node1][b1]+=
-                                                        received_forward[node2][b2]*(edge_prob[ei][b1][b2]/(ind_prob[node1][b1]*ind_prob[node2][b2]))
-                                                                /temp_sent_backward[node1][b2];
+                                        for (int b1 = 0; b1 < num_states; b1++) {
+                                            received_forward[node1][b1] = 0.0;
+                                            for (int b2 = 0; b2 < num_states; b2++)
+                                                received_forward[node1][b1] +=
+                                                        received_forward[node2][b2] * (edge_prob[ei][b1][b2] / (ind_prob[node1][b1] * ind_prob[node2][b2]))
+                                                                / temp_sent_backward[node1][b2];
                                         }
 
                                         /* Computing the conditional probability for node1 */
-                                        sum=0.0;
-                                        for (int b =0;b<num_states; b++)
-                                        {
-                                            received_forward[node1][b]*=ind_prob[node1][b]*mult[node1][b]*temp_received_backward[node1][b];
-                                            temp_cond_prob[b]=received_forward[node1][b];
-                                            sum+=temp_cond_prob[b];
+                                        sum = 0.0;
+                                        for (int b = 0; b < num_states; b++) {
+                                            received_forward[node1][b] *= ind_prob[node1][b] * mult[node1][b] * temp_received_backward[node1][b];
+                                            temp_cond_prob[b] = received_forward[node1][b];
+                                            sum += temp_cond_prob[b];
                                         }
 
                                         /* Normalizing */
-                                        for (int b =0;b<num_states; b++)
-                                        {
-                                            temp_cond_prob[b]/=sum;
+                                        for (int b = 0; b < num_states; b++) {
+                                            temp_cond_prob[b] /= sum;
                                             /* Rescaling received_forward[node1][b] */
-                                            received_forward[node1][b]=temp_cond_prob[b];
+                                            received_forward[node1][b] = temp_cond_prob[b];
                                         }
 
                                         /* Updating the bivariate count table */
-                                        for (int b =0;b<num_states; b++)
-                                            if(node1>node1_bi)
-                                                pair_prob[node1][node1_bi][b][b_bi]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
+                                        for (int b = 0; b < num_states; b++)
+                                            if (node1 > node1_bi)
+                                                pair_prob[node1][node1_bi][b][b_bi] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
                                             else
-                                                pair_prob[node1_bi][node1][b_bi][b]+=cond_prob[node1_bi][b_bi]*temp_cond_prob[b]*prob_s[n][t];
+                                                pair_prob[node1_bi][node1][b_bi][b] += cond_prob[node1_bi][b_bi] * temp_cond_prob[b] * prob_s[n][t];
                                     } /* node2 is the parent of node1 */
                                 } /* Edges in a forward pass */
                             } /* Looping on the value of the current missing node */
@@ -10486,207 +10403,190 @@ public class Distribution {
                     } /* Envelope contains more than one missing variable. */
 
                 /* Collecting the counts */
-                if(subdist != null)
+                if (subdist != null)
                     /* Mixture */
-                    for (int i =0;i<dim; i++)
-                        for (int b =0;b<num_states; b++)
-                        {
+                    for (int i = 0; i < dim; i++)
+                        for (int b = 0; b < num_states; b++) {
                             /* Computing the weight of each datum for each mixture component */
-                            mix_weight[i][b][n][t]=prob_s[n][t]*cond_prob[i][b];
+                            mix_weight[i][b][n][t] = prob_s[n][t] * cond_prob[i][b];
 
-                            temp_ind_prob[i][b]+=mix_weight[i][b][n][t];
+                            temp_ind_prob[i][b] += mix_weight[i][b][n][t];
                         }
                 else
                     /* Not a mixture */
-                    for (int i =0;i<dim; i++)
-                        if(is_missing(datum.ddata[dim_index[i]]))
-                            for (int b =0;b<num_states; b++)
-                                temp_ind_prob[i][b]+=prob_s[n][t]*cond_prob[i][b];
+                    for (int i = 0; i < dim; i++)
+                        if (is_missing(datum.ddata[dim_index[i]]))
+                            for (int b = 0; b < num_states; b++)
+                                temp_ind_prob[i][b] += prob_s[n][t] * cond_prob[i][b];
                         else
-                            temp_ind_prob[i][datum.ddata[dim_index[i]]]+=prob_s[n][t];
+                            temp_ind_prob[i][datum.ddata[dim_index[i]]] += prob_s[n][t];
 
-                if(subdist == null)
+                if (subdist == null)
                     /* Not a mixture */
-                    for (int i =1;i<dim; i++)
-                        for (int j =0;j<i; j++)
-                            if(is_missing(datum.ddata[dim_index[i]]))
-                            { /* First node of the pair is missing */
-                                if(!is_missing(datum.ddata[dim_index[j]]))
+                    for (int i = 1; i < dim; i++)
+                        for (int j = 0; j < i; j++)
+                            if (is_missing(datum.ddata[dim_index[i]])) { /* First node of the pair is missing */
+                                if (!is_missing(datum.ddata[dim_index[j]]))
                                     /* Second node of the pair is not missing */
-                                    for (int b =0;b<num_states; b++)
-                                        pair_prob[i][j][b][datum.ddata[dim_index[j]]]+=
-                                                prob_s[n][t]*cond_prob[i][b];
-                            } /* First node of the pair is missing */
-                            else
-                            { /* First node of the pair is not missing */
-                                if(is_missing(datum.ddata[dim_index[j]]))
+                                    for (int b = 0; b < num_states; b++)
+                                        pair_prob[i][j][b][datum.ddata[dim_index[j]]] +=
+                                                prob_s[n][t] * cond_prob[i][b];
+                            } /* First node of the pair is missing */ else { /* First node of the pair is not missing */
+                                if (is_missing(datum.ddata[dim_index[j]]))
                                     /* Second node of the pair is missing */
-                                    for (int b =0;b<num_states; b++)
-                                        pair_prob[i][j][datum.ddata[dim_index[i]]][b]+=
-                                                prob_s[n][t]*cond_prob[j][b];
+                                    for (int b = 0; b < num_states; b++)
+                                        pair_prob[i][j][datum.ddata[dim_index[i]]][b] +=
+                                                prob_s[n][t] * cond_prob[j][b];
                                 else
                                     /* Both nodes are present */
                                     pair_prob[i][j][datum.ddata[dim_index[i]]]
-                                            [datum.ddata[dim_index[j]]]+=prob_s[n][t];
+                                            [datum.ddata[dim_index[j]]] += prob_s[n][t];
                             } /* First node of the pair is not missing */
 
                 /* Accounting for pairs from different envelopes with missing variables */
-                for(int env1=0;env1<num_envelopes; env1++)
-                    for(int env2=env1+1;env2<num_envelopes; env2++)
-                        if(envelope[env1].is_missing&&envelope[env2].is_missing)
-                            for(int node1=0;node1<envelope[env1].num_nodes;node1++)
-                                for(int node2=0;node2<envelope[env2].num_nodes;node2++)
-                                {
-                                    int i=envelope[env1].node[node1];
-                                   int  j=envelope[env2].node[node2];
-                                    for(int b1=0;b1<num_states; b1++)
-                                        for(int b2=0;b2<num_states; b2++)
-                                            if(i>j)
-                                                pair_prob[i][j][b1][b2]+=prob_s[n][t]*cond_prob[i][b1]*cond_prob[j][b2];
+                for (int env1 = 0; env1 < num_envelopes; env1++)
+                    for (int env2 = env1 + 1; env2 < num_envelopes; env2++)
+                        if (envelope[env1].is_missing && envelope[env2].is_missing)
+                            for (int node1 = 0; node1 < envelope[env1].num_nodes; node1++)
+                                for (int node2 = 0; node2 < envelope[env2].num_nodes; node2++) {
+                                    int i = envelope[env1].node[node1];
+                                    int j = envelope[env2].node[node2];
+                                    for (int b1 = 0; b1 < num_states; b1++)
+                                        for (int b2 = 0; b2 < num_states; b2++)
+                                            if (i > j)
+                                                pair_prob[i][j][b1][b2] += prob_s[n][t] * cond_prob[i][b1] * cond_prob[j][b2];
                                             else
-                                                pair_prob[j][i][b2][b1]+=prob_s[n][t]*cond_prob[i][b1]*cond_prob[j][b2];
+                                                pair_prob[j][i][b2][b1] += prob_s[n][t] * cond_prob[i][b1] * cond_prob[j][b2];
                                 }
 
                 /* Deallocating the envelopes */
-                if(subdist == null)
+                if (subdist == null)
                     /* Not a mixture */
-                    for (int env =0;env<num_envelopes; env++)
+                    for (int env = 0; env < num_envelopes; env++)
                         envelope[env] = null;
             } /* For each example, computing its contribution to pairwise probabilities */
 
         /* Deallocating count collection structures */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             mult[i] = null;
         mult = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             sent_backward[i] = null;
         sent_backward = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             received_backward[i] = null;
         received_backward = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             received_forward[i] = null;
         received_forward = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             cond_prob[i] = null;
         cond_prob = null;
         temp_cond_prob = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             temp_sent_backward[i] = null;
         temp_sent_backward = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             temp_received_backward[i] = null;
         temp_received_backward = null;
         visited = null;
 
         /* Calculating probability distribution projections from the counts */
         /* The normalizing factor is the normalizing constant! */
-        for (int i =0;i<dim; i++)
-        {
-            sum=0.0;
-            for(int i1=0;i1<num_states; i1++)
-                sum+=temp_ind_prob[i][i1];
+        for (int i = 0; i < dim; i++) {
+            sum = 0.0;
+            for (int i1 = 0; i1 < num_states; i1++)
+                sum += temp_ind_prob[i][i1];
 
-            for(int i1=0;i1<num_states; i1++)
-                ind_prob[i][i1]=(temp_ind_prob[i][i1]+pcount_uni[i][i1])/(sum+pcount);
+            for (int i1 = 0; i1 < num_states; i1++)
+                ind_prob[i][i1] = (temp_ind_prob[i][i1] + pcount_uni[i][i1]) / (sum + pcount);
         }
 
-        norm_const=sum;
+        norm_const = sum;
 
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-            {
-                sum=0.0;
-                for(int i1=0;i1<num_states; i1++)
-                    for(int i2=0;i2<num_states; i2++)
-                        sum+=pair_prob[i][j][i1][i2];
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++) {
+                sum = 0.0;
+                for (int i1 = 0; i1 < num_states; i1++)
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        sum += pair_prob[i][j][i1][i2];
 
-                for(int i1=0;i1<num_states; i1++)
-                    for(int i2=0;i2<num_states; i2++)
-                        pair_prob[i][j][i1][i2]=(pair_prob[i][j][i1][i2]+pcount_bi[i][j][i1][i2])/(sum+pcount);
+                for (int i1 = 0; i1 < num_states; i1++)
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        pair_prob[i][j][i1][i2] = (pair_prob[i][j][i1][i2] + pcount_bi[i][j][i1][i2]) / (sum + pcount);
             }
 
         /* Allocating mutual information lower triangular matrix */
-        MI=new double*[dim];
-        for (int i =0;i<dim; i++)
-            MI[i]=new double[dim];
+        MI = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            MI[i] = new double[dim];
 
         /* Initializing mutual information */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-                MI[i][j]=0.0;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++)
+                MI[i][j] = 0.0;
 
         /* Calculating mutual information */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-                for(int i1=0;i1<num_states; i1++)
-                {
-                    MI[i][j]-=xlogx(ind_prob[i][i1]);
-                    MI[i][j]-=xlogx(ind_prob[j][i1]);
-                    for(int i2=0;i2<num_states; i2++)
-                        MI[i][j]+=xlogx(pair_prob[i][j][i1][i2]);
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++)
+                for (int i1 = 0; i1 < num_states; i1++) {
+                    MI[i][j] -= xlogx(ind_prob[i][i1]);
+                    MI[i][j] -= xlogx(ind_prob[j][i1]);
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        MI[i][j] += xlogx(pair_prob[i][j][i1][i2]);
                 }
 
         /* Applying the penalty -- MDL prior*/
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-            {
-               int b=(num_states-1)*(num_states-1);
-                MI[i][j]-=(double)b*mdl_beta/norm_const;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++) {
+                int b = (num_states - 1) * (num_states - 1);
+                MI[i][j] -= (double) b * mdl_beta / norm_const;
             }
 
         /* Making the matrix symmetric */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-                MI[j][i]=MI[i][j];
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++)
+                MI[j][i] = MI[i][j];
 
         /* Initializing the list of connected nodes */
-        node_used[dim-1]=1;
-        for (int i =0;i<dim-1;i++)
-            node_used[i]=0;
+        node_used[dim - 1] = true;
 
         /* Initializing the array of best edges */
         /* Current best edge is always from the only "attached" node */
-        for (int i =0;i<dim-1;i++)
-            best_edge[i]=dim-1;
+        for (int i = 0; i < dim - 1; i++)
+            best_edge[i] = dim - 1;
 
         /* Trying to connect nodes 0,...,dim-2 to node dim-1 */
-        num_edges=0;
-        for (int e =0;e<dim-1;e++)
-        {
-            best_MI=NEG_INF;
-           int i1=-1;
-            for (int i =0;i<dim-1;i++)
-                if(!node_used[i])
-                    if(MI[i][best_edge[i]]>best_MI)
-                    { /* Found a better edge */
-                        i1=i;
-                        best_MI=MI[i][best_edge[i]];
+        num_edges = 0;
+        for (int e = 0; e < dim - 1; e++) {
+            best_MI = NEG_INF;
+            int i1 = -1;
+            for (int i = 0; i < dim - 1; i++)
+                if (!node_used[i])
+                    if (MI[i][best_edge[i]] > best_MI) { /* Found a better edge */
+                        i1 = i;
+                        best_MI = MI[i][best_edge[i]];
                     } /* Found a better edge */
 
             /* Adding the edge */
-            node_used[i1]=1;
-            if(best_MI>=0.0)
-            {
-                if(i1>best_edge[i1])
-                {
-                    edge[num_edges][0]=i1;
-                    edge[num_edges][1]=best_edge[i1];
-                    for (int i =0;i<num_states; i++)
-                        for (int j =0;j<num_states; j++)
-                            edge_prob[num_edges][i][j]=pair_prob[i1][best_edge[i1]][i][j];
-                }
-                else
-                {
-                    edge[num_edges][0]=best_edge[i1];
-                    edge[num_edges][1]=i1;
-                    for (int i =0;i<num_states; i++)
-                        for (int j =0;j<num_states; j++)
-                            edge_prob[num_edges][i][j]=pair_prob[best_edge[i1]][i1][i][j];
+            node_used[i1] = true;
+            if (best_MI >= 0.0) {
+                if (i1 > best_edge[i1]) {
+                    edge[num_edges][0] = i1;
+                    edge[num_edges][1] = best_edge[i1];
+                    for (int i = 0; i < num_states; i++)
+                        for (int j = 0; j < num_states; j++)
+                            edge_prob[num_edges][i][j] = pair_prob[i1][best_edge[i1]][i][j];
+                } else {
+                    edge[num_edges][0] = best_edge[i1];
+                    edge[num_edges][1] = i1;
+                    for (int i = 0; i < num_states; i++)
+                        for (int j = 0; j < num_states; j++)
+                            edge_prob[num_edges][i][j] = pair_prob[best_edge[i1]][i1][i][j];
                 }
 
                 /* Storing the information about the edge */
-                edge_MI[num_edges]=best_MI;
+                edge_MI[num_edges] = best_MI;
                 /* Rank is not yet available */
 
                 /* Updating the number of edges */
@@ -10694,23 +10594,21 @@ public class Distribution {
             }
 
             /* Adjusting the list of best edges to not-yet-connected nodes */
-            for (int i =0;i<dim-1;i++)
-                if(!node_used[i])
-                    if(MI[i][i1]>MI[i][best_edge[i]])
-                        best_edge[i]=i1;
+            for (int i = 0; i < dim - 1; i++)
+                if (!node_used[i])
+                    if (MI[i][i1] > MI[i][best_edge[i]])
+                        best_edge[i] = i1;
         }
 
         /* Deallocating temporary individual probabilities */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             temp_ind_prob[i] = null;
         temp_ind_prob = null;
 
         /* Deallocaing pairwise probabilities */
-        for (int i =0;i<dim; i++)
-        {
-            for (int j =0;j<i; j++)
-            {
-                for(int i1=0;i1<num_states; i1++)
+        for (int i = 0; i < dim; i++) {
+            for (int j = 0; j < i; j++) {
+                for (int i1 = 0; i1 < num_states; i1++)
                     pair_prob[i][j][i1] = null;
                 pair_prob[i][j] = null;
             }
@@ -10719,45 +10617,40 @@ public class Distribution {
         pair_prob = null;
 
         /* Deallocating mutual information */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             MI[i] = null;
         MI = null;
 
         /* Deallocating the array of best edges */
         best_edge = null;
 
-        if(subdist != null)
-        { /* Mixture */
+        if (subdist != null) { /* Mixture */
             /* Deleting the old envelopes and computing the new ones */
-            for (int env =0;env<num_envelopes; env++)
+            for (int env = 0; env < num_envelopes; env++)
                 envelope[env] = null;
 
-            num_envelopes=compute_envelopes_full();
+            num_envelopes = compute_envelopes_full();
 
             /* Updating mixture components */
 
             /* Passing weights of the data to the mixture components */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<num_states; j++)
-                {
-                    sum=0.0;
-                    for (int n =0;n<data.num_seqs;n++)
-                        for (int t =0;t<data.sequence[n].seq_length;t++)
-                            sum+=mix_weight[i][j][n][t];
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < num_states; j++) {
+                    sum = 0.0;
+                    for (int n = 0; n < data.num_seqs; n++)
+                        for (int t = 0; t < data.sequence[n].seq_length; t++)
+                            sum += mix_weight[i][j][n][t];
 
                     /* Updating mixture components */
-                    subdist[i][j].UpdateEmissionParameters(data,mix_weight[i][j],sum);
+                    subdist[i][j].UpdateEmissionParameters(data, mix_weight[i][j], sum);
                 }
         } /* Mixture */
 
-        if(subdist!= null)
-        { /* Mixture */
+        if (subdist != null) { /* Mixture */
             /* Deallocating weights used for mixture components */
-            for (int i =0;i<dim; i++)
-            {
-                for (int j =0;j<num_states; j++)
-                {
-                    for (int n =0;n<data.num_seqs;n++)
+            for (int i = 0; i < dim; i++) {
+                for (int j = 0; j < num_states; j++) {
+                    for (int n = 0; n < data.num_seqs; n++)
                         mix_weight[i][j][n] = null;
                     mix_weight[i][j] = null;
                 }
@@ -10769,7 +10662,7 @@ public class Distribution {
         return;
     }
 
-    void UpdateEmissionConditionalChowLiu(Data data,double[][] prob_s,double norm_const){
+    void UpdateEmissionConditionalChowLiu(Data data, double[][] prob_s, double norm_const) {
   /* Indices:
      0,..,dim-1 -- previous entry observations
      dim,..,2*dim-1 -- current entry observations
@@ -10782,191 +10675,172 @@ public class Distribution {
      i1 -- value for node i
      i2 -- value for node j */
 
-        double[][][][]pair_prob;         // Projection on the pair of the variables
-        double[][]MI;                  // Mutual information
-        int[]best_edge;              // The list of current best edges
+        double[][][][] pair_prob;         // Projection on the pair of the variables
+        double[][] MI;                  // Mutual information
+        int[] best_edge;              // The list of current best edges
         double best_MI;               // Best value of mutual information in the current pass
 
         /* Temporary variable(s) */
         double sum;
 
-        pair_prob=new double[dim][][][];
-        for (int i =0;i<dim; i++)
-        {
-            pair_prob[i]=new double[2*dim][][];
-            for (int j =i+1;j<2*dim;j++)
-            {
-                pair_prob[i][j]=new double[num_states][];
-                for(int i1=0;i1<num_states; i1++)
-                    pair_prob[i][j][i1]=new double[num_states];
+        pair_prob = new double[dim][][][];
+        for (int i = 0; i < dim; i++) {
+            pair_prob[i] = new double[2 * dim][][];
+            for (int j = i + 1; j < 2 * dim; j++) {
+                pair_prob[i][j] = new double[num_states][];
+                for (int i1 = 0; i1 < num_states; i1++)
+                    pair_prob[i][j][i1] = new double[num_states];
             }
         }
 
         /* Allocating mutual information lower triangular matrix */
-        MI=new double*[dim];
-        for (int i =0;i<dim; i++)
-            MI[i]=new double[2*dim];
+        MI = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            MI[i] = new double[2 * dim];
 
         /* Array of best edges */
-        best_edge=new int[dim];
+        best_edge = new int[dim];
 
         /* Initializing */
 
         /* Individual probability projections */
-        for (int i =0;i<2*dim;i++)
-            for(int i1=0;i1<num_states; i1++)
-                ind_prob[i][i1]=0.0;
+        for (int i = 0; i < 2 * dim; i++)
+            for (int i1 = 0; i1 < num_states; i1++)
+                ind_prob[i][i1] = 0.0;
 
         /* Pairwise probability projections */
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<2*dim;j++)
-                for(int i1=0;i1<num_states; i1++)
-                    for(int i2=0;i2<num_states; i2++)
-                        pair_prob[i][j][i1][i2]=0.0;
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < 2 * dim; j++)
+                for (int i1 = 0; i1 < num_states; i1++)
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        pair_prob[i][j][i1][i2] = 0.0;
 
         /* Mutual information */
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<2*dim;j++)
-                MI[i][j]=0.0;
-        for (int i =0;i<dim; i++)
-            MI[i][i]=NEG_INF;
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < 2 * dim; j++)
+                MI[i][j] = 0.0;
+        for (int i = 0; i < dim; i++)
+            MI[i][i] = NEG_INF;
 
         /* Looping through the data to collect the counts */
-        for (int n =0;n<data.num_seqs;n++)
-        {
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                for (int i =0;i<dim; i++)
-                { /* !!! Checking for missing data !!! */
-                    if(!is_missing(data.sequence[n].entry[t].ddata[dim_index[i]]))
-                    {
-                        ind_prob[i][data.sequence[n].entry[t].ddata[dim_index[i]]]+=prob_s[n][t];
-                        for (int j =i+1;j<dim; j++)
+        for (int n = 0; n < data.num_seqs; n++) {
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                for (int i = 0; i < dim; i++) { /* !!! Checking for missing data !!! */
+                    if (!is_missing(data.sequence[n].entry[t].ddata[dim_index[i]])) {
+                        ind_prob[i][data.sequence[n].entry[t].ddata[dim_index[i]]] += prob_s[n][t];
+                        for (int j = i + 1; j < dim; j++)
                             /* !!! !!! */
-                            if(!is_missing(data.sequence[n].entry[t].ddata[dim_index[j]]))
+                            if (!is_missing(data.sequence[n].entry[t].ddata[dim_index[j]]))
                                 pair_prob[i][j][data.sequence[n].entry[t].ddata[dim_index[i]]]
-                                        [data.sequence[n].entry[t].ddata[dim_index[j]]]+=prob_s[n][t];
+                                        [data.sequence[n].entry[t].ddata[dim_index[j]]] += prob_s[n][t];
                     }
                 } /* !!! Checking for missing data !!! */
 
-            for (int t =1;t<data.sequence[n].seq_length;t++)
-                for (int i =0;i<dim; i++)
-                { /* !!! Checking for missing data !!! */
-                    if(!is_missing(data.sequence[n].entry[t-1].ddata[dim_index[i]]))
-                    {
-                        ind_prob[i+dim][data.sequence[n].entry[t-1].ddata[dim_index[i]]]+=prob_s[n][t];
-                        for (int j =0;j<dim; j++)
+            for (int t = 1; t < data.sequence[n].seq_length; t++)
+                for (int i = 0; i < dim; i++) { /* !!! Checking for missing data !!! */
+                    if (!is_missing(data.sequence[n].entry[t - 1].ddata[dim_index[i]])) {
+                        ind_prob[i + dim][data.sequence[n].entry[t - 1].ddata[dim_index[i]]] += prob_s[n][t];
+                        for (int j = 0; j < dim; j++)
                             /* !!! !!! */
-                            if(!is_missing(data.sequence[n].entry[t].ddata[dim_index[j]]))
-                                pair_prob[j][i+dim][data.sequence[n].entry[t].ddata[dim_index[j]]]
-                                        [data.sequence[n].entry[t-1].ddata[dim_index[i]]]+=prob_s[n][t];
+                            if (!is_missing(data.sequence[n].entry[t].ddata[dim_index[j]]))
+                                pair_prob[j][i + dim][data.sequence[n].entry[t].ddata[dim_index[j]]]
+                                        [data.sequence[n].entry[t - 1].ddata[dim_index[i]]] += prob_s[n][t];
                     }
                 } /* !!! Checking for missing data !!! */
         }
 
         /* Calculating probability distribution projections from the counts */
         /* The normalizing factor is the normalizing constant! */
-        for (int i =0;i<2*dim;i++)
-        {
-            sum=0.0;
-            for(int i1=0;i1<num_states; i1++)
-                sum+=ind_prob[i][i1];
+        for (int i = 0; i < 2 * dim; i++) {
+            sum = 0.0;
+            for (int i1 = 0; i1 < num_states; i1++)
+                sum += ind_prob[i][i1];
 
-            for(int i1=0;i1<num_states; i1++)
-                ind_prob[i][i1]/=sum;
+            for (int i1 = 0; i1 < num_states; i1++)
+                ind_prob[i][i1] /= sum;
         }
 
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<2*dim;j++)
-            {
-                sum=0.0;
-                for(int i1=0;i1<num_states; i1++)
-                    for(int i2=0;i2<num_states; i2++)
-                        sum+=pair_prob[i][j][i1][i2];
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < 2 * dim; j++) {
+                sum = 0.0;
+                for (int i1 = 0; i1 < num_states; i1++)
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        sum += pair_prob[i][j][i1][i2];
 
-                for(int i1=0;i1<num_states; i1++)
-                    for(int i2=0;i2<num_states; i2++)
-                        pair_prob[i][j][i1][i2]/=sum;
+                for (int i1 = 0; i1 < num_states; i1++)
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        pair_prob[i][j][i1][i2] /= sum;
             }
 
         /* Calculating mutual information */
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<2*dim;j++)
-            {
-                for(int i1=0;i1<num_states; i1++)
-                {
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < 2 * dim; j++) {
+                for (int i1 = 0; i1 < num_states; i1++) {
                     /* !!! Assuming same number of states for all variables !!! */
-                    MI[i][j]-=xlogx(ind_prob[i][i1]);
-                    MI[i][j]-=xlogx(ind_prob[j][i1]);
-                    for(int i2=0;i2<num_states; i2++)
-                        MI[i][j]+=xlogx(pair_prob[i][j][i1][i2]);
+                    MI[i][j] -= xlogx(ind_prob[i][i1]);
+                    MI[i][j] -= xlogx(ind_prob[j][i1]);
+                    for (int i2 = 0; i2 < num_states; i2++)
+                        MI[i][j] += xlogx(pair_prob[i][j][i1][i2]);
                 }
 
                 /* Applying the penalty -- MDL prior */
                 /* Computing the number of free parameters associated with the edge */
-                b=(num_states-1)*(num_states-1);
-                MI[i][j]-=(double)b*mdl_beta/norm_const;
+                int b = (num_states - 1) * (num_states - 1);
+                MI[i][j] -= (double) b * mdl_beta / norm_const;
 
-                if(j<dim )
-                    MI[j][i]=MI[i][j];
+                if (j < dim)
+                    MI[j][i] = MI[i][j];
             }
 
         /* Initializing the list of connected nodes */
-        for (int i =0;i<dim; i++)
-            node_used[i]=0;
-        for (int i =dim;i<2*dim;i++)
-            node_used[i]=1;
+        for (int i = 0; i < dim; i++)
+            node_used[i] = false;
+        for (int i = dim; i < 2 * dim; i++)
+            node_used[i] = true;
 
         /* Initializing the array of best edges */
         /* Initially, the best edges are computed from previous entry measurements to the current */
-        for (int i =0;i<dim; i++)
-        { /* To node i */
-            best_edge[i]=-1;
-            best_MI=NEG_INF;
-            for (int j =dim;j<2*dim;j++)
-                if(MI[i][j]>best_MI)
-                {
-                    best_MI=MI[i][j];
-                    best_edge[i]=j;
+        for (int i = 0; i < dim; i++) { /* To node i */
+            best_edge[i] = -1;
+            best_MI = NEG_INF;
+            for (int j = dim; j < 2 * dim; j++)
+                if (MI[i][j] > best_MI) {
+                    best_MI = MI[i][j];
+                    best_edge[i] = j;
                 }
         } /* To node i */
 
         /* Trying to connecting nodes dim,...,2*dim-1 to nodes 0,...,dim-1 */
-        num_edges=0;
-        for (int e =0;e<dim; e++)
-        {
-            best_MI=NEG_INF;
-            i1=-1;
-            for (int i =0;i<dim; i++)
-                if(!node_used[i])
-                    if(MI[i][best_edge[i]]>best_MI)
-                    { /* Found a better edge */
-                        i1=i;
-                        best_MI=MI[i][best_edge[i]];
+        num_edges = 0;
+        for (int e = 0; e < dim; e++) {
+            best_MI = NEG_INF;
+            int i1 = -1;
+            for (int i = 0; i < dim; i++)
+                if (!node_used[i])
+                    if (MI[i][best_edge[i]] > best_MI) { /* Found a better edge */
+                        i1 = i;
+                        best_MI = MI[i][best_edge[i]];
                     } /* Found a better edge */
 
             /* Adding the edge */
-            node_used[i1]=1;
-            if(best_MI>=0.0)
-            {
-                if(i1<best_edge[i1])
-                { /* Unconnected index is smaller than connected one */
-                    edge[num_edges][0]=i1;
-                    edge[num_edges][1]=best_edge[i1];
-                    for (int i =0;i<num_states; i++)
-                        for (int j =0;j<num_states; j++)
-                            edge_prob[num_edges][i][j]=pair_prob[i1][best_edge[i1]][i][j];
-                } /* best_edge[i1] is from the previous time point */
-                else
-                { /* Connected index is smaller than unconnected one */
-                    edge[num_edges][0]=best_edge[i1];
-                    edge[num_edges][1]=i1;
-                    for (int i =0;i<num_states; i++)
-                        for (int j =0;j<num_states; j++)
-                            edge_prob[num_edges][i][j]=pair_prob[best_edge[i1]][i1][i][j];
+            node_used[i1] = true;
+            if (best_MI >= 0.0) {
+                if (i1 < best_edge[i1]) { /* Unconnected index is smaller than connected one */
+                    edge[num_edges][0] = i1;
+                    edge[num_edges][1] = best_edge[i1];
+                    for (int i = 0; i < num_states; i++)
+                        for (int j = 0; j < num_states; j++)
+                            edge_prob[num_edges][i][j] = pair_prob[i1][best_edge[i1]][i][j];
+                } /* best_edge[i1] is from the previous time point */ else { /* Connected index is smaller than unconnected one */
+                    edge[num_edges][0] = best_edge[i1];
+                    edge[num_edges][1] = i1;
+                    for (int i = 0; i < num_states; i++)
+                        for (int j = 0; j < num_states; j++)
+                            edge_prob[num_edges][i][j] = pair_prob[best_edge[i1]][i1][i][j];
                 } /* Connected index is smaller than unconnected one */
 
                 /* Storing the information about the edge */
-                edge_MI[num_edges]=best_MI;
+                edge_MI[num_edges] = best_MI;
                 /* Rank is not yet available */
 
                 /* Updating the number of edges */
@@ -10974,18 +10848,16 @@ public class Distribution {
             }
 
             /* Adjusting the list of best edges to not-yet-connected nodes */
-            for (int i =0;i<dim; i++)
-                if(!node_used[i])
-                    if(MI[i][i1]>MI[i][best_edge[i]])
-                        best_edge[i]=i1;
+            for (int i = 0; i < dim; i++)
+                if (!node_used[i])
+                    if (MI[i][i1] > MI[i][best_edge[i]])
+                        best_edge[i] = i1;
         }
 
         /* Deallocaing pairwise probabilities */
-        for (int i =0;i<dim; i++)
-        {
-            for (int j =i+1;j<2*dim;j++)
-            {
-                for(int i1=0;i1<num_states; i1++)
+        for (int i = 0; i < dim; i++) {
+            for (int j = i + 1; j < 2 * dim; j++) {
+                for (int i1 = 0; i1 < num_states; i1++)
                     pair_prob[i][j][i1] = null;
                 pair_prob[i][j] = null;
             }
@@ -10994,7 +10866,7 @@ public class Distribution {
         pair_prob = null;
 
         /* Deallocating mutual information */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             MI[i] = null;
         MI = null;
 
@@ -11004,139 +10876,126 @@ public class Distribution {
         return;
     }
 
-    void UpdateEmissionFullBivariateMaxEnt(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionFullBivariateMaxEnt(Data data, double[][] prob_s, double norm_const) {
         /* !!! No missing values !!! */
 
-        double[][]count;
+        double[][] count;
         int num_combs;
-        double[]uprob;
+        double[] uprob;
         int num_unchanged;
 
-        double nu,f;
+        double nu, f;
 
         /* Temporary variable(s) */
         double sum;
 
         /* Initializing the constraint counts */
-        count=new double[dim][];
-        for (int i =0;i<dim; i++)
-        {
-            count[i]=new double[i+1];
-            for (int j =0;j<i+1;j++)
-                count[i][j]=0.0;
+        count = new double[dim][];
+        for (int i = 0; i < dim; i++) {
+            count[i] = new double[i + 1];
+            for (int j = 0; j < i + 1; j++)
+                count[i][j] = 0.0;
         }
 
         /* Calculating counts */
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                for (int i =0;i<dim; i++)
-                    if(data.sequence[n].entry[t].ddata[dim_index[i]]==1)
-                        for (int j =0;j<i+1;j++)
-                            if(data.sequence[n].entry[t].ddata[dim_index[j]]==1)
-                                count[i][j]+=prob_s[n][t];
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                for (int i = 0; i < dim; i++)
+                    if (data.sequence[n].entry[t].ddata[dim_index[i]] == 1)
+                        for (int j = 0; j < i + 1; j++)
+                            if (data.sequence[n].entry[t].ddata[dim_index[j]] == 1)
+                                count[i][j] += prob_s[n][t];
 
         /* Normalizing counts */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i+1;j++)
-            {
-                count[i][j]/=norm_const;
-                if(count[i][j]<CONSTRAINT_MIN_VALUE )
-                    count[i][j]=CONSTRAINT_MIN_VALUE;
-                else if(count[i][j]>CONSTRAINT_MAX_VALUE)
-                    count[i][j]=CONSTRAINT_MAX_VALUE;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i + 1; j++) {
+                count[i][j] /= norm_const;
+                if (count[i][j] < CONSTRAINT_MIN_VALUE)
+                    count[i][j] = CONSTRAINT_MIN_VALUE;
+                else if (count[i][j] > CONSTRAINT_MAX_VALUE)
+                    count[i][j] = CONSTRAINT_MAX_VALUE;
             }
 
 
         /* Initializing the parameters */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i+1;j++)
-                sigma[i][j]=0.0;
-        det=(double)dim*CONST_LN2;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i + 1; j++)
+                sigma[i][j] = 0.0;
+        det = (double) dim * CONST_LN2;
 
         /* Determining the total number of combinations */
-        num_combs=power2[dim];
+        num_combs = power2[dim];
 
         /* Allocating the array of unnormalized probabilities */
-        uprob=new double[num_combs];
+        uprob = new double[num_combs];
 
         /* Initializing the array */
-        for (int b =0;b<num_combs; b++)
-            uprob[b]=1.0;
+        for (int b = 0; b < num_combs; b++)
+            uprob[b] = 1.0;
 
-        num_unchanged=0;
-        i=0;j=0;
+        num_unchanged = 0;
+        int i = 0;
+        int j = 0;
 
-        while(num_unchanged<dim*(dim+1)/2)
-        {
+        while (num_unchanged < dim * (dim + 1) / 2) {
             /* Calculating the probability mass for entries satisfying the constraint */
-            sum=0.0;
-            if(i==j)
-            { /* Univariate constraint */
-                for(int i1=0;i1<power2[dim-i-1];i1++)
-                    for (int b =i1*power2[i+1]+power2[i];b<(i1+1)*power2[i+1];b++)
-                        sum+=uprob[b];
-                sum*=exp(-det);
-            } /* Univariate constraint */
-            else
-            { /* Bivariate constraint */
-                for(int i1=0;i1<power2[dim-i-1];i1++)
-                    for(int i2=0;i2<power2[i-j-1];i2++)
-                        for (int b =i1*power2[i+1]+power2[i]+i2*power2[j+1]+power2[j];
-                             b<i1*power2[i+1]+power2[i]+(i2+1)*power2[j+1];b++)
-                            sum+=uprob[b];
-                sum*=exp(-det);
+            sum = 0.0;
+            if (i == j) { /* Univariate constraint */
+                for (int i1 = 0; i1 < power2[dim - i - 1]; i1++)
+                    for (int b = i1 * power2[i + 1] + power2[i]; b < (i1 + 1) * power2[i + 1]; b++)
+                        sum += uprob[b];
+                sum *= exp(-det);
+            } /* Univariate constraint */ else { /* Bivariate constraint */
+                for (int i1 = 0; i1 < power2[dim - i - 1]; i1++)
+                    for (int i2 = 0; i2 < power2[i - j - 1]; i2++)
+                        for (int b = i1 * power2[i + 1] + power2[i] + i2 * power2[j + 1] + power2[j];
+                             b < i1 * power2[i + 1] + power2[i] + (i2 + 1) * power2[j + 1]; b++)
+                            sum += uprob[b];
+                sum *= exp(-det);
             } /* Bivariate constraint */
 
             /* Gradient */
-            nu=count[i][j]-sum;
+            nu = count[i][j] - sum;
 
-            if(abs(nu)>MAXENT_EPSILON)
-            { /* Constraint not satisfied -- updating the parameter */
-                if(sum>2.0*CONSTRAINT_MAX_VALUE||sum<0.5*CONSTRAINT_MIN_VALUE)
+            if (abs(nu) > MAXENT_EPSILON) { /* Constraint not satisfied -- updating the parameter */
+                if (sum > 2.0 * CONSTRAINT_MAX_VALUE || sum < 0.5 * CONSTRAINT_MIN_VALUE)
                     /* Too sensitive -- will skip for now */
                     num_unchanged++;
-                else
-                {
-                    f=log(count[i][j])-log(1.0-count[i][j])+log(1.0-sum)-log(sum);
-                    sigma[i][j]+=f;
-                    f=exp(f);
+                else {
+                    f = log(count[i][j]) - log(1.0 - count[i][j]) + log(1.0 - sum) - log(sum);
+                    sigma[i][j] += f;
+                    f = exp(f);
 
                     /* Updating the probabilities */
-                    if(i==j)
-                    { /* Univariate constraint */
-                        for(int i1=0;i1<power2[dim-i-1];i1++)
-                            for (int b =i1*power2[i+1]+power2[i];b<(i1+1)*power2[i+1];b++)
-                                uprob[b]*=f;
-                    } /* Univariate constraint */
-                    else
-                    { /* Bivariate constraint */
-                        for(int i1=0;i1<power2[dim-i-1];i1++)
-                            for(int i2=0;i2<power2[i-j-1];i2++)
-                                for (int b =i1*power2[i+1]+power2[i]+i2*power2[j+1]+power2[j];
-                                     b<i1*power2[i+1]+power2[i]+(i2+1)*power2[j+1];b++)
-                                    uprob[b]*=f;
+                    if (i == j) { /* Univariate constraint */
+                        for (int i1 = 0; i1 < power2[dim - i - 1]; i1++)
+                            for (int b = i1 * power2[i + 1] + power2[i]; b < (i1 + 1) * power2[i + 1]; b++)
+                                uprob[b] *= f;
+                    } /* Univariate constraint */ else { /* Bivariate constraint */
+                        for (int i1 = 0; i1 < power2[dim - i - 1]; i1++)
+                            for (int i2 = 0; i2 < power2[i - j - 1]; i2++)
+                                for (int b = i1 * power2[i + 1] + power2[i] + i2 * power2[j + 1] + power2[j];
+                                     b < i1 * power2[i + 1] + power2[i] + (i2 + 1) * power2[j + 1]; b++)
+                                    uprob[b] *= f;
                     } /* Bivariate constraint */
 
                     /* Updating the normalization constant */
-                    det-=log(1.0-count[i][j])-log(1.0-sum);
+                    det -= log(1.0 - count[i][j]) - log(1.0 - sum);
 
-                    num_unchanged=0;
+                    num_unchanged = 0;
                 }
-            } /* Constraint not satisfied -- updating the parameter */
-            else
+            } /* Constraint not satisfied -- updating the parameter */ else
                 /* Constraint satisfied */
                 num_unchanged++;
 
             /* Determining the next constraint to update */
-            if(j==i)
-            {
-                j=0;
-                if(i==dim-1)
-                    i=0;
+            if (j == i) {
+                j = 0;
+                if (i == dim - 1)
+                    i = 0;
                 else
                     i++;
-            }
-            else
+            } else
                 j++;
         }
 
@@ -11144,327 +11003,296 @@ public class Distribution {
         uprob = null;
 
         /* Deallocating the constraint counts */
-        for (int i =0;i<dim; i++)
+        for (i = 0; i < dim; i++)
             count[i] = null;
         count = null;
-
-        return;
     }
 
-    void UpdateEmissionPUCMaxEnt(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionPUCMaxEnt(Data data, double[][] prob_s, double norm_const) {
         /* !!! Assuming no missing values !!! */
 
-        double[][]score,alpha;
+        double[][] score, alpha;
         int num_points;
-        int[][]flat_data;    // Flattened data
-        double[]w;           // Flat array of weights
-        double[][]count;
-        int[]old_num_features;
-        int[][]old_feature_index;
+        int[][] flat_data;    // Flattened data
+        double[] w;           // Flat array of weights
+        double[][] count;
+        int[] old_num_features;
+        int[][] old_feature_index;
         double baseline_ll;
         double new_ll;
-        double[][]old_sigma;
-        int from_index,to_index;
-        double[]uprob;
-        int[][]descendant,candidate;
-        double[]factor_ll;
+        double[][] old_sigma;
+        int from_index = 0, to_index = 0;
+        double[] uprob;
+        int[][] descendant, candidate;
+        double[] factor_ll;
         double best_score;
 
         /* Temporary variables */
         double temp1;
 
         /* Creating a flat data set */
-        num_points=data.num_points();
-        w=new double[num_points];
-        flat_data=new int*[num_points];
-       int  i1=0;
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-            {
-                flat_data[i1]=new int[dim];
-                for (int i =0;i<dim; i++)
-                    flat_data[i1][i]=data.sequence[n].entry[t].ddata[dim_index[i]];
-                w[i1]=prob_s[n][t];
+        num_points = data.num_points();
+        w = new double[num_points];
+        flat_data = new int[num_points][];
+        int i1 = 0;
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++) {
+                flat_data[i1] = new int[dim];
+                for (int i = 0; i < dim; i++)
+                    flat_data[i1][i] = data.sequence[n].entry[t].ddata[dim_index[i]];
+                w[i1] = prob_s[n][t];
                 i1++;
             }
 
 
         /* Computing mass of univariate and bivariate occurences */
-        uprob=new double[dim];
-        count=new double[dim][];
-        for (int i =0;i<dim; i++)
-            count[i]=new double[dim];
+        uprob = new double[dim];
+        count = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            count[i] = new double[dim];
 
-        for (int i =0;i<dim; i++)
-        {
-            uprob[i]=0.0;
-            for (int n =0;n<num_points; n++)
-                if(flat_data[n][i])
-                    uprob[i]+=w[n];
+        for (int i = 0; i < dim; i++) {
+            uprob[i] = 0.0;
+            for (int n = 0; n < num_points; n++)
+                if (flat_data[n][i] != 0)
+                    uprob[i] += w[n];
 
             /* Making sure the sum is not too small or too large */
             /* Guaranteeing the probability under the constraint to be in (1e-12, 1-1e-12) */
-            if(uprob[i]>norm_const*CONSTRAINT_MAX_VALUE)
-                uprob[i]=norm_const*CONSTRAINT_MAX_VALUE;
-            else if(uprob[i]<norm_const*CONSTRAINT_MIN_VALUE)
-                uprob[i]=norm_const*CONSTRAINT_MIN_VALUE;
+            if (uprob[i] > norm_const * CONSTRAINT_MAX_VALUE)
+                uprob[i] = norm_const * CONSTRAINT_MAX_VALUE;
+            else if (uprob[i] < norm_const * CONSTRAINT_MIN_VALUE)
+                uprob[i] = norm_const * CONSTRAINT_MIN_VALUE;
 
-            for (int j =0;j<i; j++)
-            {
-                count[i][j]=0.0;
-                for (int n =0;n<num_points; n++)
-                    if(flat_data[n][i]==1&&flat_data[n][j]==1)
-                        count[i][j]+=w[n];
+            for (int j = 0; j < i; j++) {
+                count[i][j] = 0.0;
+                for (int n = 0; n < num_points; n++)
+                    if (flat_data[n][i] == 1 && flat_data[n][j] == 1)
+                        count[i][j] += w[n];
 
                 /* Making sure the sum is not too small or too large */
                 /* Guaranteeing the probability under the constraint to be in (1e-12, 1-1e-12) */
-                if(count[i][j]>norm_const*CONSTRAINT_MAX_VALUE)
-                    count[i][j]=norm_const*CONSTRAINT_MAX_VALUE;
-                else if(count[i][j]<norm_const*CONSTRAINT_MIN_VALUE)
-                    count[i][j]=norm_const*CONSTRAINT_MIN_VALUE;
+                if (count[i][j] > norm_const * CONSTRAINT_MAX_VALUE)
+                    count[i][j] = norm_const * CONSTRAINT_MAX_VALUE;
+                else if (count[i][j] < norm_const * CONSTRAINT_MIN_VALUE)
+                    count[i][j] = norm_const * CONSTRAINT_MIN_VALUE;
 
-                count[j][i]=count[i][j];
+                count[j][i] = count[i][j];
             }
-            count[i][i]=uprob[i];
+            count[i][i] = uprob[i];
         }
 
         /* Computing parameters for the current structure */
-        baseline_ll=0.0;
+        baseline_ll = 0.0;
         /* Allocating and initializing the array for the old structure */
-        old_num_features=new int[dim];
-        old_feature_index=new int*[dim];
-        old_sigma=new double*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            temp1=
-                    learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                            count[i],num_features[i],sigma[i],feature_index[i]);
+        old_num_features = new int[dim];
+        old_feature_index = new int[dim][];
+        old_sigma = new double[dim][];
+        for (int i = 0; i < dim; i++) {
+            temp1 =
+                    learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                            count[i], num_features[i], sigma[i], feature_index[i]);
 
-            if(!finite(temp1))
-            {
+            if (!isFinite(temp1)) {
                 /* Trying to set all parameters to zero */
-                for (int j =0;j<num_features[i];j++)
-                    sigma[i][j]=0.0;
+                for (int j = 0; j < num_features[i]; j++)
+                    sigma[i][j] = 0.0;
 
-                temp1=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                                count[i],num_features[i],sigma[i],feature_index[i]);
-                baseline_ll+=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                                count[i],num_features[i],sigma[i],feature_index[i]);
+                temp1 =
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                                count[i], num_features[i], sigma[i], feature_index[i]);
+                baseline_ll +=
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                                count[i], num_features[i], sigma[i], feature_index[i]);
 
-                if(!finite(temp1))
+                if (!isFinite(temp1))
                     /* Cannot find a solution */
-                    temp1=NEG_INF;
+                    temp1 = NEG_INF;
             }
 
-            baseline_ll+=temp1;
+            baseline_ll += temp1;
 
-            old_num_features[i]=num_features[i];
-            old_feature_index[i]=new int[dim];
-            old_sigma[i]=new double[dim];
-            for (int j =0;j<num_features[i];j++)
-            {
-                old_feature_index[i][j]=feature_index[i][j];
-                old_sigma[i][j]=sigma[i][j];
+            old_num_features[i] = num_features[i];
+            old_feature_index[i] = new int[dim];
+            old_sigma[i] = new double[dim];
+            for (int j = 0; j < num_features[i]; j++) {
+                old_feature_index[i][j] = feature_index[i][j];
+                old_sigma[i][j] = sigma[i][j];
             }
         }
 
         /* Factor log-likelihood */
-        factor_ll=new double[dim];
+        factor_ll = new double[dim];
 
         /* Initializing to having only the univariate features */
-        for (int i =0;i<dim; i++)
-        {
-            num_features[i]=1;
-            feature_index[i][0]=i;
+        for (int i = 0; i < dim; i++) {
+            num_features[i] = 1;
+            feature_index[i][0] = i;
         }
 
-        for (int i =0;i<dim; i++)
-        {
-            sigma[i][0]=log(uprob[i])-log(norm_const-uprob[i]);
-            factor_ll[i]=uprob[i]*sigma[i][0]-norm_const*log(1.0+exp(sigma[i][0]));
+        for (int i = 0; i < dim; i++) {
+            sigma[i][0] = log(uprob[i]) - log(norm_const - uprob[i]);
+            factor_ll[i] = uprob[i] * sigma[i][0] - norm_const * log(1.0 + exp(sigma[i][0]));
         }
 
         /* Allocating and initializing the matrix indicating the descendants in the network */
         // descendant[i][j]=1 means that j is a descendant of i.  i is a descendant of i be default.
-        descendant=new int*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            descendant[i]=new int[dim];
-            for (int j =0;j<dim; j++)
-                descendant[i][j]=0;
+        descendant = new int[dim][];
+        for (int i = 0; i < dim; i++) {
+            descendant[i] = new int[dim];
+            for (int j = 0; j < dim; j++)
+                descendant[i][j] = 0;
         }
 
         /* Allocating and initializing the matrix of candidate features for each factor */
-        candidate=new int*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            candidate[i]=new int[dim];
-            for (int j =0;j<dim; j++)
-                candidate[i][j]=1;
-            candidate[i][i]=0;
+        candidate = new int[dim][];
+        for (int i = 0; i < dim; i++) {
+            candidate[i] = new int[dim];
+            for (int j = 0; j < dim; j++)
+                candidate[i][j] = 1;
+            candidate[i][i] = 0;
         }
 
         /* Initializing the array of scores */
-        score=new double*[dim];
-        for (int i =0;i<dim; i++)
-            score[i]=new double[dim];
+        score = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            score[i] = new double[dim];
 
         /* Initializing the array of starting values for parameters as determined by the scoring procedure */
-        alpha=new double*[dim];
-        for (int i =0;i<dim; i++)
-            alpha[i]=new double[dim];
+        alpha = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            alpha[i] = new double[dim];
 
-        if (BLAH) {
-            /* Computing the score for each candidate */
-            for (int i =0;i<dim; i++)
-                InformationGain(data,prob_s,norm_const,candidate[i],score[i],alpha[i],i);
-        }
+//        if (BLAH) {
+//            /* Computing the score for each candidate */
+//            for (int i = 0; i < dim; i++)
+//                InformationGain(data, prob_s, norm_const, candidate[i], score[i], alpha[i], i);
+//        }
         /* Efficient computation available when only one conditioning variable */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-            {
-                score[i][j]=xlogx(count[i][j])+xlogx(uprob[i]-count[i][j])+xlogx(uprob[j]-count[i][j])
-                        +xlogx(norm_const+count[i][j]-uprob[i]-uprob[j])+xlogx(norm_const)
-                        -xlogx(uprob[i])-xlogx(uprob[j])-xlogx(norm_const-uprob[i])-xlogx(norm_const-uprob[j]);
-                score[i][j]/=norm_const;
-                score[j][i]=score[i][j];
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++) {
+                score[i][j] = xlogx(count[i][j]) + xlogx(uprob[i] - count[i][j]) + xlogx(uprob[j] - count[i][j])
+                        + xlogx(norm_const + count[i][j] - uprob[i] - uprob[j]) + xlogx(norm_const)
+                        - xlogx(uprob[i]) - xlogx(uprob[j]) - xlogx(norm_const - uprob[i]) - xlogx(norm_const - uprob[j]);
+                score[i][j] /= norm_const;
+                score[j][i] = score[i][j];
                 /* alpha's are irrelevant for pairs */
-                alpha[i][j]=0.0;
-                alpha[j][i]=0.0;
+                alpha[i][j] = 0.0;
+                alpha[j][i] = 0.0;
             }
 
-        temp1=1.0;
-        best_score=0.0;
+        temp1 = 1.0;
+        best_score = 0.0;
         /* Determining the best score */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-                if(candidate[i][j])
-                    if(score[i][j]>best_score+COMP_EPSILON)
-                    {
-                        best_score=score[i][j];
-                        from_index=j;
-                        to_index=i;
-                    }
-                    else
-                    {
-                        if(abs(score[i][j]-best_score)<=COMP_EPSILON)
-                        { /* Two scores are identical -- deciding which edge to pick */
-                            temp1+=1.0;
-                            if (Constants.drand48()<1.0/temp1)
-                            { /* Pick the newer edge */
-                                from_index=j;
-                                to_index=i;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++)
+                if (candidate[i][j] != 0)
+                    if (score[i][j] > best_score + COMP_EPSILON) {
+                        best_score = score[i][j];
+                        from_index = j;
+                        to_index = i;
+                    } else {
+                        if (abs(score[i][j] - best_score) <= COMP_EPSILON) { /* Two scores are identical -- deciding which edge to pick */
+                            temp1 += 1.0;
+                            if (Constants.drand48() < 1.0 / temp1) { /* Pick the newer edge */
+                                from_index = j;
+                                to_index = i;
                             } /* Pick the newer edge */
                         } /* Two scores are identical -- deciding which edge to pick */
                     }
 
         //  while( best_score>maxent_epsilon )
-        while(best_score>mdl_beta/norm_const)
-        { /* Adding an edge */
+        while (best_score > mdl_beta / norm_const) { /* Adding an edge */
 
             /* Updating the indices in the factor */
-            feature_index[to_index][num_features[to_index]]=from_index;
+            feature_index[to_index][num_features[to_index]] = from_index;
 
             /* Initializing the value corresponding to the added feature */
-            sigma[to_index][num_features[to_index]]=alpha[to_index][from_index];
+            sigma[to_index][num_features[to_index]] = alpha[to_index][from_index];
 
             num_features[to_index]++;
 
             /* Updating the parameters */
-            if(num_features[to_index]==2)
-            { /* Special case of two variables with bivariate features */
-                sigma[to_index][0]=log(uprob[to_index]-count[to_index][from_index])
-                        -log(norm_const+count[to_index][from_index]-uprob[to_index]-uprob[from_index]);
-                sigma[to_index][1]=log(count[to_index][from_index])
-                        +log(norm_const+count[to_index][from_index]-uprob[to_index]-uprob[from_index])
-                        -log(uprob[to_index]-count[to_index][from_index])
-                        -log(uprob[from_index]-count[to_index][from_index]);
+            if (num_features[to_index] == 2) { /* Special case of two variables with bivariate features */
+                sigma[to_index][0] = log(uprob[to_index] - count[to_index][from_index])
+                        - log(norm_const + count[to_index][from_index] - uprob[to_index] - uprob[from_index]);
+                sigma[to_index][1] = log(count[to_index][from_index])
+                        + log(norm_const + count[to_index][from_index] - uprob[to_index] - uprob[from_index])
+                        - log(uprob[to_index] - count[to_index][from_index])
+                        - log(uprob[from_index] - count[to_index][from_index]);
 
-                factor_ll[to_index]=uprob[to_index]*sigma[to_index][0]+
-                        count[to_index][from_index]*sigma[to_index][1]-
-                        uprob[from_index]*log(1.0+exp(sigma[to_index][0]+sigma[to_index][1]))-
-                        (norm_const-uprob[from_index])*log(1.0+exp(sigma[to_index][0]));
-            } /* Special case of two variables with bivariate features */
-            else
-                factor_ll[to_index]=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,to_index,count[to_index],
-                                num_features[to_index],sigma[to_index],feature_index[to_index]);
+                factor_ll[to_index] = uprob[to_index] * sigma[to_index][0] +
+                        count[to_index][from_index] * sigma[to_index][1] -
+                        uprob[from_index] * log(1.0 + exp(sigma[to_index][0] + sigma[to_index][1])) -
+                        (norm_const - uprob[from_index]) * log(1.0 + exp(sigma[to_index][0]));
+            } /* Special case of two variables with bivariate features */ else
+                factor_ll[to_index] =
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, to_index, count[to_index],
+                                num_features[to_index], sigma[to_index], feature_index[to_index]);
 
-            candidate[to_index][from_index]=0;
+            candidate[to_index][from_index] = 0;
 
             /* Updating the list of descendants */
-            descendant[from_index][to_index]=1;
-            for (int i =0;i<dim; i++)
-                if(descendant[to_index][i])
-                    descendant[from_index][i]=1;
+            descendant[from_index][to_index] = 1;
+            for (int i = 0; i < dim; i++)
+                if (descendant[to_index][i] != 0)
+                    descendant[from_index][i] = 1;
 
             /* Updating descendant table for all nodes having to_index as a descendant */
-            for (int i =0;i<dim; i++)
-                if(descendant[i][from_index])
-                    for (int j =0;j<dim; j++)
-                        if(descendant[i][j]==1||descendant[from_index][j]==1)
-                            descendant[i][j]=1;
+            for (int i = 0; i < dim; i++)
+                if (descendant[i][from_index] != 0)
+                    for (int j = 0; j < dim; j++)
+                        if (descendant[i][j] == 1 || descendant[from_index][j] == 1)
+                            descendant[i][j] = 1;
 
             /* Updating the list of candidates */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                    if(candidate[i][j])
-                        if(descendant[i][j])
-                            candidate[i][j]=0;
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++)
+                    if (candidate[i][j] != 0)
+                        if (descendant[i][j] != 0)
+                            candidate[i][j] = 0;
 
             /* Recomputing the scores for the factor to_index */
-            InformationGain(num_points,flat_data,w,norm_const,count[to_index],candidate[to_index],
-                    score[to_index],alpha[to_index],to_index);
+            InformationGain(num_points, flat_data, w, norm_const, count[to_index], candidate[to_index],
+                    score[to_index], alpha[to_index], to_index);
 
-            temp1=1.0;
-            best_score=0.0;
+            temp1 = 1.0;
+            best_score = 0.0;
             /* Determining the best score */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                    if(candidate[i][j])
-                        if(score[i][j]>best_score+COMP_EPSILON)
-                        {
-                            best_score=score[i][j];
-                            from_index=j;
-                            to_index=i;
-                        }
-                        else
-                        if(abs(score[i][j]-best_score)<=COMP_EPSILON)
-                        { /* Two scores are identical -- deciding which edge to pick */
-                            temp1+=1.0;
-                            if (Constants.drand48()<1.0/temp1)
-                            { /* Pick the newer edge */
-                                from_index=j;
-                                to_index=i;
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++)
+                    if (candidate[i][j] != 0)
+                        if (score[i][j] > best_score + COMP_EPSILON) {
+                            best_score = score[i][j];
+                            from_index = j;
+                            to_index = i;
+                        } else if (abs(score[i][j] - best_score) <= COMP_EPSILON) { /* Two scores are identical -- deciding which edge to pick */
+                            temp1 += 1.0;
+                            if (Constants.drand48() < 1.0 / temp1) { /* Pick the newer edge */
+                                from_index = j;
+                                to_index = i;
                             } /* Pick the newer edge */
                         } /* Two scores are identical -- deciding which edge to pick */
         } /* Adding an edge */
 
         /* Computing the new log-likelihood */
-        new_ll=0.0;
-        for (int i =0;i<dim; i++)
-            new_ll+=factor_ll[i];
+        new_ll = 0.0;
+        for (int i = 0; i < dim; i++)
+            new_ll += factor_ll[i];
 
-        if(new_ll>baseline_ll)
-        {
+        if (new_ll > baseline_ll) {
             /* Deleting arrays with previous structure */
             old_num_features = null;
-            for (int i =0;i<dim; i++)
-            {
+            for (int i = 0; i < dim; i++) {
                 old_feature_index[i] = null;
                 old_sigma[i] = null;
             }
             old_feature_index = null;
             old_sigma = null;
-        }
-        else
-        {
+        } else {
             /* Deleting arrays with current structure */
             num_features = null;
-            for (int i =0;i<dim; i++)
-            {
+            for (int i = 0; i < dim; i++) {
                 feature_index[i] = null;
                 sigma[i] = null;
             }
@@ -11472,30 +11300,30 @@ public class Distribution {
             sigma = null;
 
             /* Reusing the old structure */
-            num_features=old_num_features;
-            feature_index=old_feature_index;
-            sigma=old_sigma;
+            num_features = old_num_features;
+            feature_index = old_feature_index;
+            sigma = old_sigma;
         }
 
         /* Deallocating the arrays */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             alpha[i] = null;
         alpha = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             score[i] = null;
         score = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             candidate[i] = null;
         candidate = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             descendant[i] = null;
         descendant = null;
 
         uprob = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             count[i] = null;
         count = null;
 
@@ -11503,364 +11331,332 @@ public class Distribution {
 
         /* Deallocating flat data set */
         w = null;
-        for (int n =0;n<num_points; n++)
+        for (int n = 0; n < num_points; n++)
             flat_data[n] = null;
         flat_data = null;
 
         return;
     }
 
-    void UpdateEmissionConditionalPUCMaxEnt(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionConditionalPUCMaxEnt(Data data, double[][] prob_s, double norm_const) {
         /* !!! Assuming no missing values !!! */
 
-        double[][]score,alpha;
+        double[][] score, alpha;
         int num_points;
-        int[][]flat_data;    // Flattened data
-        double[]w;           // Flat array of weights
-        double[][]count;
-        int[]old_num_features;
+        int[][] flat_data;    // Flattened data
+        double[] w;           // Flat array of weights
+        double[][] count;
+        int[] old_num_features;
         int[][] old_feature_index;
         double baseline_ll;
         double new_ll;
-        double[][]old_sigma;
-        int from_index,to_index;
-        double[]uprob;
-        int[][]descendant,candidate;
-        double[]factor_ll;
+        double[][] old_sigma;
+        int from_index = 0, to_index = 0;
+        double[] uprob;
+        int[][] descendant, candidate;
+        double[] factor_ll;
         double best_score;
 
         /* Temporary variables */
         double temp1;
 
-  /* Creating a flat data set 
-     
+  /* Creating a flat data set
+
   Only time points 2..T are used.
-  
+
   components 0..dim-1 -- current time point
   components dim..2*dim-1 -- previous time point
   */
 
         /* Computing first entry probability of one */
-        for (int i =0;i<dim; i++)
-        {
-            state_prob[i]=0.0;
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                    if(data.sequence[n].entry[t].ddata[dim_index[i]]==1)
-                        state_prob[i]+=prob_s[n][t];
+        for (int i = 0; i < dim; i++) {
+            state_prob[i] = 0.0;
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++)
+                    if (data.sequence[n].entry[t].ddata[dim_index[i]] == 1)
+                        state_prob[i] += prob_s[n][t];
 
-            state_prob[i]/=norm_const;
+            state_prob[i] /= norm_const;
         }
 
-        num_points=data.num_points()-data.num_seqs;
-        w=new double[num_points];
-        flat_data=new int[num_points][];
-       int i1=0;
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =1;t<data.sequence[n].seq_length;t++)
-            {
-                flat_data[i1]=new int[2*dim];
-                for (int i =0;i<dim; i++)
-                {
-                    flat_data[i1][i]=data.sequence[n].entry[t].ddata[dim_index[i]];
-                    flat_data[i1][i+dim]=data.sequence[n].entry[t-1].ddata[dim_index[i]];
+        num_points = data.num_points() - data.num_seqs;
+        w = new double[num_points];
+        flat_data = new int[num_points][];
+        int i1 = 0;
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 1; t < data.sequence[n].seq_length; t++) {
+                flat_data[i1] = new int[2 * dim];
+                for (int i = 0; i < dim; i++) {
+                    flat_data[i1][i] = data.sequence[n].entry[t].ddata[dim_index[i]];
+                    flat_data[i1][i + dim] = data.sequence[n].entry[t - 1].ddata[dim_index[i]];
                 }
-                w[i1]=prob_s[n][t];
+                w[i1] = prob_s[n][t];
                 i1++;
             }
 
         /* Computing mass of univariate and bivariate occurences */
-        uprob=new double[2*dim];
-        count=new double[dim][];
-        for (int i =0;i<dim; i++)
-            count[i]=new double[2*dim];
+        uprob = new double[2 * dim];
+        count = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            count[i] = new double[2 * dim];
 
-        for (int i =0;i<dim; i++)
-        {
-            uprob[i]=0.0;
-            for (int n =0;n<num_points; n++)
-                if(flat_data[n][i]==1)
-                    uprob[i]+=w[n];
+        for (int i = 0; i < dim; i++) {
+            uprob[i] = 0.0;
+            for (int n = 0; n < num_points; n++)
+                if (flat_data[n][i] == 1)
+                    uprob[i] += w[n];
 
-            uprob[i+dim]=0.0;
-            for (int n =0;n<num_points; n++)
-                if(flat_data[n][i+dim]==1)
-                    uprob[i+dim]+=w[n];
+            uprob[i + dim] = 0.0;
+            for (int n = 0; n < num_points; n++)
+                if (flat_data[n][i + dim] == 1)
+                    uprob[i + dim] += w[n];
 
             /* Making sure the sum is not too small or too large */
             /* Guaranteeing the probability under the constraint to be in (1e-12, 1-1e-12) */
-            if(uprob[i]>norm_const*CONSTRAINT_MAX_VALUE)
-                uprob[i]=norm_const*CONSTRAINT_MAX_VALUE;
-            else if(uprob[i]<norm_const*CONSTRAINT_MIN_VALUE)
-                uprob[i]=norm_const*CONSTRAINT_MIN_VALUE;
-            if(uprob[i+dim]>norm_const*CONSTRAINT_MAX_VALUE)
-                uprob[i+dim]=norm_const*CONSTRAINT_MAX_VALUE;
-            else if(uprob[i+dim]<norm_const*CONSTRAINT_MIN_VALUE)
-                uprob[i+dim]=norm_const*CONSTRAINT_MIN_VALUE;
+            if (uprob[i] > norm_const * CONSTRAINT_MAX_VALUE)
+                uprob[i] = norm_const * CONSTRAINT_MAX_VALUE;
+            else if (uprob[i] < norm_const * CONSTRAINT_MIN_VALUE)
+                uprob[i] = norm_const * CONSTRAINT_MIN_VALUE;
+            if (uprob[i + dim] > norm_const * CONSTRAINT_MAX_VALUE)
+                uprob[i + dim] = norm_const * CONSTRAINT_MAX_VALUE;
+            else if (uprob[i + dim] < norm_const * CONSTRAINT_MIN_VALUE)
+                uprob[i + dim] = norm_const * CONSTRAINT_MIN_VALUE;
 
-            for (int j =i+1;j<2*dim;j++)
-            {
-                count[i][j]=0.0;
-                for (int n =0;n<num_points; n++)
-                    if(flat_data[n][i]==1&&flat_data[n][j]==1)
-                        count[i][j]+=w[n];
+            for (int j = i + 1; j < 2 * dim; j++) {
+                count[i][j] = 0.0;
+                for (int n = 0; n < num_points; n++)
+                    if (flat_data[n][i] == 1 && flat_data[n][j] == 1)
+                        count[i][j] += w[n];
 
                 /* Making sure the sum is not too small or too large */
                 /* Guaranteeing the probability under the constraint to be in (1e-12, 1-1e-12) */
-                if(count[i][j]>norm_const*CONSTRAINT_MAX_VALUE)
-                    count[i][j]=norm_const*CONSTRAINT_MAX_VALUE;
-                else if(count[i][j]<norm_const*CONSTRAINT_MIN_VALUE)
-                    count[i][j]=norm_const*CONSTRAINT_MIN_VALUE;
+                if (count[i][j] > norm_const * CONSTRAINT_MAX_VALUE)
+                    count[i][j] = norm_const * CONSTRAINT_MAX_VALUE;
+                else if (count[i][j] < norm_const * CONSTRAINT_MIN_VALUE)
+                    count[i][j] = norm_const * CONSTRAINT_MIN_VALUE;
 
-                if(j<dim )
-                    count[j][i]=count[i][j];
+                if (j < dim)
+                    count[j][i] = count[i][j];
             }
-            count[i][i]=uprob[i];
+            count[i][i] = uprob[i];
         }
 
         /* Computing parameters for the current structure */
-        baseline_ll=0.0;
+        baseline_ll = 0.0;
         /* Allocating and initializing the array for the old structure */
-        old_num_features=new int[dim];
-        old_feature_index=new int*[dim];
-        old_sigma=new double*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            temp1=learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                    count[i],num_features[i],sigma[i],feature_index[i]);
+        old_num_features = new int[dim];
+        old_feature_index = new int[dim][];
+        old_sigma = new double[dim][];
+        for (int i = 0; i < dim; i++) {
+            temp1 = learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                    count[i], num_features[i], sigma[i], feature_index[i]);
 
-            if(!finite(temp1))
-            {
+            if (!isFinite(temp1)) {
                 /* Trying to set all parameters to zero */
-                for (int j =0;j<num_features[i];j++)
-                    sigma[i][j]=0.0;
+                for (int j = 0; j < num_features[i]; j++)
+                    sigma[i][j] = 0.0;
 
-                temp1=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                                count[i],num_features[i],sigma[i],feature_index[i]);
-                baseline_ll+=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,i,
-                                count[i],num_features[i],sigma[i],feature_index[i]);
+                temp1 =
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                                count[i], num_features[i], sigma[i], feature_index[i]);
+                baseline_ll +=
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, i,
+                                count[i], num_features[i], sigma[i], feature_index[i]);
 
-                if(!finite(temp1))
+                if (!isFinite(temp1))
                     /* Cannot find a solution */
-                    temp1=NEG_INF;
+                    temp1 = NEG_INF;
             }
 
-            baseline_ll+=temp1;
+            baseline_ll += temp1;
 
-            old_num_features[i]=num_features[i];
+            old_num_features[i] = num_features[i];
             //      old_feature_index[i]=new int[num_features[i]];
             //      old_sigma[i]=new double[num_features[i]];
-            old_feature_index[i]=new int[2*dim];
-            old_sigma[i]=new double[2*dim];
-            for (int j =0;j<num_features[i];j++)
-            {
-                old_feature_index[i][j]=feature_index[i][j];
-                old_sigma[i][j]=sigma[i][j];
+            old_feature_index[i] = new int[2 * dim];
+            old_sigma[i] = new double[2 * dim];
+            for (int j = 0; j < num_features[i]; j++) {
+                old_feature_index[i][j] = feature_index[i][j];
+                old_sigma[i][j] = sigma[i][j];
             }
         }
 
         /* Factor log-likelihood */
-        factor_ll=new double[dim];
+        factor_ll = new double[dim];
 
         /* Initializing to having only the univariate features */
-        for (int i =0;i<dim; i++)
-        {
-            num_features[i]=1;
-            feature_index[i][0]=i;
+        for (int i = 0; i < dim; i++) {
+            num_features[i] = 1;
+            feature_index[i][0] = i;
         }
 
-        for (int i =0;i<dim; i++)
-        {
-            sigma[i][0]=log(uprob[i])-log(norm_const-uprob[i]);
-            factor_ll[i]=uprob[i]*sigma[i][0]-norm_const*log(1.0+exp(sigma[i][0]));
+        for (int i = 0; i < dim; i++) {
+            sigma[i][0] = log(uprob[i]) - log(norm_const - uprob[i]);
+            factor_ll[i] = uprob[i] * sigma[i][0] - norm_const * log(1.0 + exp(sigma[i][0]));
         }
 
         /* Allocating and initializing the matrix indicating the descendants in the network */
         /* descendant[i][j]=1 means that j is a descendant of i.  i is a descendant of i be default. */
-        descendant=new int*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            descendant[i]=new int[dim];
-            for (int j =0;j<dim; j++)
-                descendant[i][j]=0;
+        descendant = new int[dim][];
+        for (int i = 0; i < dim; i++) {
+            descendant[i] = new int[dim];
+            for (int j = 0; j < dim; j++)
+                descendant[i][j] = 0;
         }
 
         /* Allocating and initializing the matrix of candidate features for each factor */
-        candidate=new int*[dim];
-        for (int i =0;i<dim; i++)
-        {
-            candidate[i]=new int[2*dim];
-            for (int j =0;j<2*dim;j++)
-                candidate[i][j]=1;
-            candidate[i][i]=0;
+        candidate = new int[dim][];
+        for (int i = 0; i < dim; i++) {
+            candidate[i] = new int[2 * dim];
+            for (int j = 0; j < 2 * dim; j++)
+                candidate[i][j] = 1;
+            candidate[i][i] = 0;
         }
 
         /* Initializing the array of scores */
-        score=new double*[dim];
-        for (int i =0;i<dim; i++)
-            score[i]=new double[2*dim];
+        score = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            score[i] = new double[2 * dim];
 
         /* Initializing the array of starting values for parameters as determined by the scoring procedure */
-        alpha=new double*[dim];
-        for (int i =0;i<dim; i++)
-            alpha[i]=new double[2*dim];
+        alpha = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            alpha[i] = new double[2 * dim];
 
-        if (BLAH) {
-            /* Computing the score for each candidate */
-            for (int i =0;i<dim; i++)
-                InformationGain(data,prob_s,norm_const,candidate[i],score[i],alpha[i],i);
-        }
+//        if (BLAH) {
+//            /* Computing the score for each candidate */
+//            for (int i = 0; i < dim; i++)
+//                InformationGain(data, prob_s, norm_const, candidate[i], score[i], alpha[i], i);
+//        }
         /* Efficient computation available when only one conditioning variable */
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<2*dim;j++)
-            {
-                score[i][j]=xlogx(count[i][j])+xlogx(uprob[i]-count[i][j])+xlogx(uprob[j]-count[i][j])
-                        +xlogx(norm_const+count[i][j]-uprob[i]-uprob[j])+xlogx(norm_const)
-                        -xlogx(uprob[i])-xlogx(uprob[j])-xlogx(norm_const-uprob[i])-xlogx(norm_const-uprob[j]);
-                score[i][j]/=norm_const;
-                if(j<dim )
-                    score[j][i]=score[i][j];
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < 2 * dim; j++) {
+                score[i][j] = xlogx(count[i][j]) + xlogx(uprob[i] - count[i][j]) + xlogx(uprob[j] - count[i][j])
+                        + xlogx(norm_const + count[i][j] - uprob[i] - uprob[j]) + xlogx(norm_const)
+                        - xlogx(uprob[i]) - xlogx(uprob[j]) - xlogx(norm_const - uprob[i]) - xlogx(norm_const - uprob[j]);
+                score[i][j] /= norm_const;
+                if (j < dim)
+                    score[j][i] = score[i][j];
                 /* alpha's are irrelevant for pairs */
-                alpha[i][j]=0.0;
-                if(j<dim )
-                    alpha[j][i]=0.0;
+                alpha[i][j] = 0.0;
+                if (j < dim)
+                    alpha[j][i] = 0.0;
             }
 
-        temp1=1.0;
-        best_score=0.0;
+        temp1 = 1.0;
+        best_score = 0.0;
         /* Determining the best score */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<2*dim;j++)
-                if(candidate[i][j])
-                    if(score[i][j]>best_score+COMP_EPSILON)
-                    {
-                        best_score=score[i][j];
-                        from_index=j;
-                        to_index=i;
-                    }
-                    else
-                    {
-                        if(abs(score[i][j]-best_score)<=COMP_EPSILON)
-                        { /* Two scores are identical -- deciding which edge to pick */
-                            temp1+=1.0;
-                            if (Constants.drand48()<1.0/temp1)
-                            { /* Pick the newer edge */
-                                from_index=j;
-                                to_index=i;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < 2 * dim; j++)
+                if (candidate[i][j] != 0)
+                    if (score[i][j] > best_score + COMP_EPSILON) {
+                        best_score = score[i][j];
+                        from_index = j;
+                        to_index = i;
+                    } else {
+                        if (abs(score[i][j] - best_score) <= COMP_EPSILON) { /* Two scores are identical -- deciding which edge to pick */
+                            temp1 += 1.0;
+                            if (Constants.drand48() < 1.0 / temp1) { /* Pick the newer edge */
+                                from_index = j;
+                                to_index = i;
                             } /* Pick the newer edge */
                         } /* Two scores are identical -- deciding which edge to pick */
                     }
 
         //  while( best_score>MIN_ME_LL_CHANGE )
-        while(best_score>mdl_beta/norm_const)
-        { /* Adding an edge */
+        while (best_score > mdl_beta / norm_const) { /* Adding an edge */
 
             /* Updating the indices in the factor */
-            feature_index[to_index][num_features[to_index]]=from_index;
+            feature_index[to_index][num_features[to_index]] = from_index;
 
             /* Initializing the value corresponding to the added feature */
-            sigma[to_index][num_features[to_index]]=alpha[to_index][from_index];
+            sigma[to_index][num_features[to_index]] = alpha[to_index][from_index];
 
             num_features[to_index]++;
 
             /* Updating the parameters */
-            if(num_features[to_index]==2)
-            { /* Special case of two variables with bivariate features */
-                sigma[to_index][0]=log(uprob[to_index]-count[to_index][from_index])
-                        -log(norm_const+count[to_index][from_index]-uprob[to_index]-uprob[from_index]);
-                sigma[to_index][1]=log(count[to_index][from_index])
-                        +log(norm_const+count[to_index][from_index]-uprob[to_index]-uprob[from_index])
-                        -log(uprob[to_index]-count[to_index][from_index])
-                        -log(uprob[from_index]-count[to_index][from_index]);
+            if (num_features[to_index] == 2) { /* Special case of two variables with bivariate features */
+                sigma[to_index][0] = log(uprob[to_index] - count[to_index][from_index])
+                        - log(norm_const + count[to_index][from_index] - uprob[to_index] - uprob[from_index]);
+                sigma[to_index][1] = log(count[to_index][from_index])
+                        + log(norm_const + count[to_index][from_index] - uprob[to_index] - uprob[from_index])
+                        - log(uprob[to_index] - count[to_index][from_index])
+                        - log(uprob[from_index] - count[to_index][from_index]);
 
-                factor_ll[to_index]=uprob[to_index]*sigma[to_index][0]+
-                        count[to_index][from_index]*sigma[to_index][1]-
-                        uprob[from_index]*log(1.0+exp(sigma[to_index][0]+sigma[to_index][1]))-
-                        (norm_const-uprob[from_index])*log(1.0+exp(sigma[to_index][0]));
-            } /* Special case of two variables with bivariate features */
-            else
-                factor_ll[to_index]=
-                        learn_univariate_conditional_maxent(num_points,flat_data,w,norm_const,to_index,count[to_index],
-                                num_features[to_index],sigma[to_index],feature_index[to_index]);
+                factor_ll[to_index] = uprob[to_index] * sigma[to_index][0] +
+                        count[to_index][from_index] * sigma[to_index][1] -
+                        uprob[from_index] * log(1.0 + exp(sigma[to_index][0] + sigma[to_index][1])) -
+                        (norm_const - uprob[from_index]) * log(1.0 + exp(sigma[to_index][0]));
+            } /* Special case of two variables with bivariate features */ else
+                factor_ll[to_index] =
+                        learn_univariate_conditional_maxent(num_points, flat_data, w, norm_const, to_index, count[to_index],
+                                num_features[to_index], sigma[to_index], feature_index[to_index]);
 
-            candidate[to_index][from_index]=0;
+            candidate[to_index][from_index] = 0;
 
-            if(from_index<dim )
-            {
+            if (from_index < dim) {
                 /* Updating the list of descendants */
-                descendant[from_index][to_index]=1;
-                for (int i =0;i<dim; i++)
-                    if(descendant[to_index][i])
-                        descendant[from_index][i]=1;
+                descendant[from_index][to_index] = 1;
+                for (int i = 0; i < dim; i++)
+                    if (descendant[to_index][i] != 0)
+                        descendant[from_index][i] = 1;
 
                 /* Updating descendant table for all nodes having to_index as a descendant */
-                for (int i =0;i<dim; i++)
-                    if(descendant[i][from_index])
-                        for (int j =0;j<dim; j++)
-                            if(descendant[i][j]==1||descendant[from_index][j]==1)
-                                descendant[i][j]=1;
+                for (int i = 0; i < dim; i++)
+                    if (descendant[i][from_index] != 0)
+                        for (int j = 0; j < dim; j++)
+                            if (descendant[i][j] == 1 || descendant[from_index][j] == 1)
+                                descendant[i][j] = 1;
 
                 /* Updating the list of candidates */
-                for (int i =0;i<dim; i++)
-                    for (int j =0;j<dim; j++)
-                        if(candidate[i][j])
-                            if(descendant[i][j])
-                                candidate[i][j]=0;
+                for (int i = 0; i < dim; i++)
+                    for (int j = 0; j < dim; j++)
+                        if (candidate[i][j] != 0)
+                            if (descendant[i][j] != 0)
+                                candidate[i][j] = 0;
             }
 
             /* Recomputing the scores for the factor to_index */
-            InformationGain(num_points,flat_data,w,norm_const,count[to_index],candidate[to_index],
-                    score[to_index],alpha[to_index],to_index);
+            InformationGain(num_points, flat_data, w, norm_const, count[to_index], candidate[to_index],
+                    score[to_index], alpha[to_index], to_index);
 
-            temp1=1.0;
-            best_score=0.0;
+            temp1 = 1.0;
+            best_score = 0.0;
             /* Determining the best score */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<2*dim;j++)
-                    if(candidate[i][j])
-                        if(score[i][j]>best_score+COMP_EPSILON)
-                        {
-                            best_score=score[i][j];
-                            from_index=j;
-                            to_index=i;
-                        }
-                        else
-                        if(abs(score[i][j]-best_score)<=COMP_EPSILON)
-                        { /* Two scores are identical -- deciding which edge to pick */
-                            temp1+=1.0;
-                            if (Constants.drand48()<1.0/temp1)
-                            { /* Pick the newer edge */
-                                from_index=j;
-                                to_index=i;
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < 2 * dim; j++)
+                    if (candidate[i][j] != 0)
+                        if (score[i][j] > best_score + COMP_EPSILON) {
+                            best_score = score[i][j];
+                            from_index = j;
+                            to_index = i;
+                        } else if (abs(score[i][j] - best_score) <= COMP_EPSILON) { /* Two scores are identical -- deciding which edge to pick */
+                            temp1 += 1.0;
+                            if (Constants.drand48() < 1.0 / temp1) { /* Pick the newer edge */
+                                from_index = j;
+                                to_index = i;
                             } /* Pick the newer edge */
                         } /* Two scores are identical -- deciding which edge to pick */
         } /* Adding an edge */
 
         /* Computing the new log-likelihood */
-        new_ll=0.0;
-        for (int i =0;i<dim; i++)
-            new_ll+=factor_ll[i];
+        new_ll = 0.0;
+        for (int i = 0; i < dim; i++)
+            new_ll += factor_ll[i];
 
-        if(new_ll>baseline_ll)
-        {
+        if (new_ll > baseline_ll) {
             /* Deleting arrays with previous structure */
             old_num_features = null;
-            for (int i =0;i<dim; i++)
-            {
+            for (int i = 0; i < dim; i++) {
                 old_feature_index[i] = null;
                 old_sigma[i] = null;
             }
             old_feature_index = null;
             old_sigma = null;
-        }
-        else
-        {
+        } else {
             /* Deleting arrays with current structure */
             num_features = null;
-            for (int i =0;i<dim; i++)
-            {
+            for (int i = 0; i < dim; i++) {
                 feature_index[i] = null;
                 sigma[i] = null;
             }
@@ -11868,30 +11664,30 @@ public class Distribution {
             sigma = null;
 
             /* Reusing the old structure */
-            num_features=old_num_features;
-            feature_index=old_feature_index;
-            sigma=old_sigma;
+            num_features = old_num_features;
+            feature_index = old_feature_index;
+            sigma = old_sigma;
         }
 
         /* Deallocating the arrays */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             alpha[i] = null;
         alpha = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             score[i] = null;
         score = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             candidate[i] = null;
         candidate = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             descendant[i] = null;
         descendant = null;
 
         uprob = null;
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             count[i] = null;
         count = null;
 
@@ -11899,79 +11695,72 @@ public class Distribution {
 
         /* Deallocating flat data set */
         w = null;
-        for (int n =0;n<num_points; n++)
+        for (int n = 0; n < num_points; n++)
             flat_data[n] = null;
         flat_data = null;
-
-        return;
     }
 
-    void UpdateEmissionDeltaExponential(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionDeltaExponential(Data data, double[][] prob_s, double norm_const) {
 
         /* Temporary variable(s) */
         double sum;
-        double[]temp,temp_prob_mix,temp_exp_value;
-        double[]value_contrib;
+        double[] temp, temp_prob_mix, temp_exp_value;
+        double[] value_contrib;
         double max_value;
 
         /* Flags */
         //  int leave_unchanged=0;
 
         /* Updating parameters for delta-exponential distribution */
-        temp_prob_mix=new double[num_states];
-        temp_exp_value=new double[num_states-1];
-        temp=new double[num_states-1];
-        value_contrib=new double[num_states-1];
+        temp_prob_mix = new double[num_states];
+        temp_exp_value = new double[num_states - 1];
+        temp = new double[num_states - 1];
+        value_contrib = new double[num_states - 1];
 
         /* Calculating mixing parameters and the exponential parameter */
-        for (int i =0;i<num_states; i++)
-            temp_prob_mix[i]=0.0;
-        for (int i =0;i<num_states-1;i++)
-            temp_exp_value[i]=0.0;
+        for (int i = 0; i < num_states; i++)
+            temp_prob_mix[i] = 0.0;
+        for (int i = 0; i < num_states - 1; i++)
+            temp_exp_value[i] = 0.0;
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]]))
-                {
-                    if(abs(data.sequence[n].entry[t].rdata[dim_index[0]])<=COMP_THRESHOLD)
-                        temp_prob_mix[0]+=prob_s[n][t];
-                    else
-                    {
-                        max_value=NEG_INF;
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            value_contrib[i]=log(mix_prob[i+1])+log(exp_param[i])-exp_param[i]*data.sequence[n].entry[t].rdata[dim_index[0]];
-                            if(value_contrib[i]>max_value)
-                                max_value=value_contrib[i];
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]])) {
+                    if (abs(data.sequence[n].entry[t].rdata[dim_index[0]]) <= COMP_THRESHOLD)
+                        temp_prob_mix[0] += prob_s[n][t];
+                    else {
+                        max_value = NEG_INF;
+                        for (int i = 0; i < num_states - 1; i++) {
+                            value_contrib[i] = log(mix_prob[i + 1]) + log(exp_param[i]) - exp_param[i] * data.sequence[n].entry[t].rdata[dim_index[0]];
+                            if (value_contrib[i] > max_value)
+                                max_value = value_contrib[i];
                         }
 
-                        sum=0.0;
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            temp[i]=exp(value_contrib[i]-max_value);
-                            sum+=temp[i];
+                        sum = 0.0;
+                        for (int i = 0; i < num_states - 1; i++) {
+                            temp[i] = exp(value_contrib[i] - max_value);
+                            sum += temp[i];
                         }
 
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            temp[i]*=(prob_s[n][t]/sum);
-                            temp_prob_mix[i+1]+=temp[i];
-                            temp_exp_value[i]+=temp[i]*data.sequence[n].entry[t].rdata[dim_index[0]];
+                        for (int i = 0; i < num_states - 1; i++) {
+                            temp[i] *= (prob_s[n][t] / sum);
+                            temp_prob_mix[i + 1] += temp[i];
+                            temp_exp_value[i] += temp[i] * data.sequence[n].entry[t].rdata[dim_index[0]];
                         }
                     }
                 }
 
         /* Normalizing mixing probabilities */
-        sum=0.0;
-        for (int i =0;i<num_states; i++)
-            sum+=temp_prob_mix[i];
+        sum = 0.0;
+        for (int i = 0; i < num_states; i++)
+            sum += temp_prob_mix[i];
 
-        for (int i =0;i<num_states; i++)
-            mix_prob[i]=temp_prob_mix[i]/sum;
+        for (int i = 0; i < num_states; i++)
+            mix_prob[i] = temp_prob_mix[i] / sum;
 
         /* Parameters for the exponential components */
-        for (int i =0;i<num_states-1;i++)
-            exp_param[i]=temp_prob_mix[i+1]/temp_exp_value[i];
+        for (int i = 0; i < num_states - 1; i++)
+            exp_param[i] = temp_prob_mix[i + 1] / temp_exp_value[i];
 
         value_contrib = null;
         temp_prob_mix = null;
@@ -11981,103 +11770,95 @@ public class Distribution {
         return;
     }
 
-    void UpdateEmissionDeltaGamma(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionDeltaGamma(Data data, double[][] prob_s, double norm_const) {
 
-        double f,fprime;
+        double f, fprime;
 
         /* Temporary variable(s) */
         double sum;
-        double[]temp,temp_prob_mix,temp_exp_value,temp_exp_log;
-        double[]value_contrib;
+        double[] temp, temp_prob_mix, temp_exp_value, temp_exp_log;
+        double[] value_contrib;
         double max_value;
 
         /* Flags */
         //  int leave_unchanged=0;
 
         /* Updating parameters for delta-gamma distribution */
-        temp_prob_mix=new double[num_states];
-        temp_exp_value=new double[num_states-1];
-        temp_exp_log=new double[num_states-1];
-        temp=new double[num_states-1];
-        value_contrib=new double[num_states-1];
+        temp_prob_mix = new double[num_states];
+        temp_exp_value = new double[num_states - 1];
+        temp_exp_log = new double[num_states - 1];
+        temp = new double[num_states - 1];
+        value_contrib = new double[num_states - 1];
 
         /* Calculating mixing parameters and the exponential parameter */
-        for (int i =0;i<num_states; i++)
-            temp_prob_mix[i]=0.0;
-        for (int i =0;i<num_states-1;i++)
-        {
-            temp_exp_value[i]=0.0;
-            temp_exp_log[i]=0.0;
+        for (int i = 0; i < num_states; i++)
+            temp_prob_mix[i] = 0.0;
+        for (int i = 0; i < num_states - 1; i++) {
+            temp_exp_value[i] = 0.0;
+            temp_exp_log[i] = 0.0;
         }
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]]))
-                {
-                    if(abs(data.sequence[n].entry[t].rdata[dim_index[0]])<=COMP_THRESHOLD)
-                        temp_prob_mix[0]+=prob_s[n][t];
-                    else
-                    {
-                        max_value=NEG_INF;
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            value_contrib[i]=log(mix_prob[i+1])
-                                    +(gamma_param1[i]-1.0)*log(data.sequence[n].entry[t].rdata[dim_index[0]])
-                                    -gamma_param2[i]*data.sequence[n].entry[t].rdata[dim_index[0]]
-                                    +gamma_param1[i]*log(gamma_param2[i])-gammaln(gamma_param1[i]);
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]])) {
+                    if (abs(data.sequence[n].entry[t].rdata[dim_index[0]]) <= COMP_THRESHOLD)
+                        temp_prob_mix[0] += prob_s[n][t];
+                    else {
+                        max_value = NEG_INF;
+                        for (int i = 0; i < num_states - 1; i++) {
+                            value_contrib[i] = log(mix_prob[i + 1])
+                                    + (gamma_param1[i] - 1.0) * log(data.sequence[n].entry[t].rdata[dim_index[0]])
+                                    - gamma_param2[i] * data.sequence[n].entry[t].rdata[dim_index[0]]
+                                    + gamma_param1[i] * log(gamma_param2[i]) - gammaln(gamma_param1[i]);
                             //+log(gamma_dist(data.sequence[n].entry[t].rdata[dim_index[0]],gamma_param1[i],gamma_param2[i]));
-                            if(value_contrib[i]>max_value)
-                                max_value=value_contrib[i];
+                            if (value_contrib[i] > max_value)
+                                max_value = value_contrib[i];
                         }
 
-                        sum=0.0;
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            temp[i]=exp(value_contrib[i]-max_value);
-                            sum+=temp[i];
+                        sum = 0.0;
+                        for (int i = 0; i < num_states - 1; i++) {
+                            temp[i] = exp(value_contrib[i] - max_value);
+                            sum += temp[i];
                         }
 
-                        for (int i =0;i<num_states-1;i++)
-                        {
-                            temp[i]*=(prob_s[n][t]/sum);
-                            temp_prob_mix[i+1]+=temp[i];
-                            temp_exp_value[i]+=temp[i]*data.sequence[n].entry[t].rdata[dim_index[0]];
-                            temp_exp_log[i]+=temp[i]*log(data.sequence[n].entry[t].rdata[dim_index[0]]);
+                        for (int i = 0; i < num_states - 1; i++) {
+                            temp[i] *= (prob_s[n][t] / sum);
+                            temp_prob_mix[i + 1] += temp[i];
+                            temp_exp_value[i] += temp[i] * data.sequence[n].entry[t].rdata[dim_index[0]];
+                            temp_exp_log[i] += temp[i] * log(data.sequence[n].entry[t].rdata[dim_index[0]]);
                         }
                     }
                 }
 
         /* Parameters for the gamma components */
-        for (int i =0;i<num_states-1;i++)
-        {
-            temp[i]=gamma_param1[i];
+        for (int i = 0; i < num_states - 1; i++) {
+            temp[i] = gamma_param1[i];
 
             /* Starting from the previous value */
-            f=digamma(gamma_param1[i])-log(gamma_param1[i])-temp_exp_log[i]/temp_prob_mix[i+1]
-                    -log(temp_prob_mix[i+1])+log(temp_exp_value[i]);
-            fprime=trigamma(gamma_param1[i])-1.0/gamma_param1[i];
+            f = digamma(gamma_param1[i]) - log(gamma_param1[i]) - temp_exp_log[i] / temp_prob_mix[i + 1]
+                    - log(temp_prob_mix[i + 1]) + log(temp_exp_value[i]);
+            fprime = trigamma(gamma_param1[i]) - 1.0 / gamma_param1[i];
 
-            while(abs(f)>NR_EPSILON&&abs(fprime)>NR_EPSILON)
-            {
-                gamma_param1[i]-=f/fprime;
-                f=digamma(gamma_param1[i])-log(gamma_param1[i])-temp_exp_log[i]/temp_prob_mix[i+1]
-                        -log(temp_prob_mix[i+1])+log(temp_exp_value[i]);
-                fprime=trigamma(gamma_param1[i])-1.0/gamma_param1[i];
+            while (abs(f) > NR_EPSILON && abs(fprime) > NR_EPSILON) {
+                gamma_param1[i] -= f / fprime;
+                f = digamma(gamma_param1[i]) - log(gamma_param1[i]) - temp_exp_log[i] / temp_prob_mix[i + 1]
+                        - log(temp_prob_mix[i + 1]) + log(temp_exp_value[i]);
+                fprime = trigamma(gamma_param1[i]) - 1.0 / gamma_param1[i];
             }
 
-            if(abs(fprime)<NR_EPSILON ||gamma_param1[i]<=0.0)
-                gamma_param1[i]=temp[i];
+            if (abs(fprime) < NR_EPSILON || gamma_param1[i] <= 0.0)
+                gamma_param1[i] = temp[i];
             else
-                gamma_param2[i]=gamma_param1[i]*temp_prob_mix[i+1]/temp_exp_value[i];
+                gamma_param2[i] = gamma_param1[i] * temp_prob_mix[i + 1] / temp_exp_value[i];
         }
 
         /* Normalizing mixing probabilities */
-        sum=0.0;
-        for (int i =0;i<num_states; i++)
-            sum+=temp_prob_mix[i];
+        sum = 0.0;
+        for (int i = 0; i < num_states; i++)
+            sum += temp_prob_mix[i];
 
-        for (int i =0;i<num_states; i++)
-            mix_prob[i]=temp_prob_mix[i]/sum;
+        for (int i = 0; i < num_states; i++)
+            mix_prob[i] = temp_prob_mix[i] / sum;
 
         value_contrib = null;
         temp_prob_mix = null;
@@ -12088,305 +11869,283 @@ public class Distribution {
         return;
     }
 
-    void UpdateEmissionExponential(Data data,double[][]prob_s){
+    void UpdateEmissionExponential(Data data, double[][] prob_s) {
 
         /* Temporary variable(s) */
         double temp;
-        double sum=0.0;
+        double sum = 0.0;
 
-        temp=0.0;
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]]))
-                {
-                    temp+=prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[0]];
-                    sum+=prob_s[n][t];
+        temp = 0.0;
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]])) {
+                    temp += prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[0]];
+                    sum += prob_s[n][t];
                 }
 
-        exp_param1=sum/temp;
+        exp_param1 = sum / temp;
     }
 
-    void UpdateEmissionGamma(Data data,double[][]prob_s){
+    void UpdateEmissionGamma(Data data, double[][] prob_s) {
 
-        double f,fprime,ll,ll_old;
+        double f, fprime, ll, ll_old;
 
         /* Temporary variable(s) */
-        double temp,total_mass,total_comb,total_log;
+        double temp, total_mass, total_comb, total_log;
 
         /* Updating parameters for gamma distribution */
 
         /* Precomputing the constants */
-        total_mass=0.0;
-        total_comb=0.0;
-        total_log=0.0;
+        total_mass = 0.0;
+        total_comb = 0.0;
+        total_log = 0.0;
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]])&&prob_s[n][t]>0)
-                {
-                    total_mass+=prob_s[n][t];
-                    total_comb+=prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[0]];
-                    total_log+=prob_s[n][t]*log(data.sequence[n].entry[t].rdata[dim_index[0]]);
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]]) && prob_s[n][t] > 0) {
+                    total_mass += prob_s[n][t];
+                    total_comb += prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[0]];
+                    total_log += prob_s[n][t] * log(data.sequence[n].entry[t].rdata[dim_index[0]]);
                 }
 
-       int  iteration_ll=0;
-        ll=NEG_INF;
-        ll_old=NEG_INF;
-        while(iteration_ll==0||ll>ll_old+CONJ_GRAD_EPSILON)
-        {
+        int iteration_ll = 0;
+        ll = NEG_INF;
+        ll_old = NEG_INF;
+        while (iteration_ll == 0 || ll > ll_old + CONJ_GRAD_EPSILON) {
             iteration_ll++;
-            ll_old=ll;
+            ll_old = ll;
 
             /* Parameters for the gamma components */
-            temp=gamma1;
+            temp = gamma1;
 
-           int iteration=0;
-            f=0.0;
-            fprime=0.0;
-            while(iteration==0||(iteration<MAX_NR_ITERATIONS &&abs(f)>NR_EPSILON&&abs(fprime)>NR_EPSILON))
-            {
+            int iteration = 0;
+            f = 0.0;
+            fprime = 0.0;
+            while (iteration == 0 || (iteration < MAX_NR_ITERATIONS && abs(f) > NR_EPSILON && abs(fprime) > NR_EPSILON)) {
                 iteration++;
-                f=total_log/total_mass+log(gamma2)-digamma(gamma1);
-                fprime=-trigamma(gamma1);
+                f = total_log / total_mass + log(gamma2) - digamma(gamma1);
+                fprime = -trigamma(gamma1);
 
-                gamma1-=f/fprime;
+                gamma1 -= f / fprime;
             }
 
-            if(iteration==MAX_NR_ITERATIONS)
-                gamma1=temp;
+            if (iteration == MAX_NR_ITERATIONS)
+                gamma1 = temp;
 
-            gamma2=gamma1*total_mass/total_comb;
+            gamma2 = gamma1 * total_mass / total_comb;
 
             /* Computing new log-likelihoood */
-            ll=(gamma1-1.0)*total_log/total_mass-gamma2*total_comb/total_mass+gamma1*log(gamma2)-gammaln(gamma1);
+            ll = (gamma1 - 1.0) * total_log / total_mass - gamma2 * total_comb / total_mass + gamma1 * log(gamma2) - gammaln(gamma1);
         }
     }
 
-    void UpdateEmissionLognormal(Data data,double[][]prob_s){
-        double sum_log=0.0;
-        double sum_log2=0.0;
-        double sum_weight=0.0;
+    void UpdateEmissionLognormal(Data data, double[][] prob_s) {
+        double sum_log = 0.0;
+        double sum_log2 = 0.0;
+        double sum_weight = 0.0;
 
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-                if(!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]])&&prob_s[n][t]>0)
-                {
-                    sum_weight+=prob_s[n][t];
-                    sum_log+=prob_s[n][t]*log(data.sequence[n].entry[t].rdata[dim_index[0]]);
-                    sum_log2+=prob_s[n][t]*log(data.sequence[n].entry[t].rdata[dim_index[0]])
-                            *log(data.sequence[n].entry[t].rdata[dim_index[0]]);
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
+                if (!is_missing(data.sequence[n].entry[t].rdata[dim_index[0]]) && prob_s[n][t] > 0) {
+                    sum_weight += prob_s[n][t];
+                    sum_log += prob_s[n][t] * log(data.sequence[n].entry[t].rdata[dim_index[0]]);
+                    sum_log2 += prob_s[n][t] * log(data.sequence[n].entry[t].rdata[dim_index[0]])
+                            * log(data.sequence[n].entry[t].rdata[dim_index[0]]);
                 }
 
-        log_normal1=sum_log/sum_weight;
-        log_normal2=(sum_log2-2.0*log_normal1*sum_log+log_normal1*log_normal1*sum_weight)/sum_weight;
+        log_normal1 = sum_log / sum_weight;
+        log_normal2 = (sum_log2 - 2.0 * log_normal1 * sum_log + log_normal1 * log_normal1 * sum_weight) / sum_weight;
 
     }
 
-    void UpdateEmissionGaussian(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionGaussian(Data data, double[][] prob_s, double norm_const) {
 
         /* Zeroing out the mean */
-        for (int i =0;i<dim; i++)
-            mu[i]=0.0;
+        for (int i = 0; i < dim; i++)
+            mu[i] = 0.0;
 
         /* Updating the mean */
-        for (int i =0;i<dim; i++)
-        { /* i-th component of the mean */
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                    mu[i]+=(prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[i]]);
+        for (int i = 0; i < dim; i++) { /* i-th component of the mean */
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++)
+                    mu[i] += (prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[i]]);
 
-            mu[i]/=norm_const;
+            mu[i] /= norm_const;
         } /* i-th component of the mean */
 
         /* Zeroing out the covariance matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            {
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) {
                 /* Storing sigma's values for the case of singular matrix */
-                inv_sigma[i][j]=sigma[i][j];
-                sigma[i][j]=0.0;
+                inv_sigma[i][j] = sigma[i][j];
+                sigma[i][j] = 0.0;
             }
 
         /* Updating the covariance matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            {
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                        sigma[i][j]+=(prob_s[n][t]*
-                                (mu[i]-data.sequence[n].entry[t].rdata[dim_index[i]])*
-                                (mu[j]-data.sequence[n].entry[t].rdata[dim_index[j]]));
-                sigma[i][j]/=norm_const;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) {
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++)
+                        sigma[i][j] += (prob_s[n][t] *
+                                (mu[i] - data.sequence[n].entry[t].rdata[dim_index[i]]) *
+                                (mu[j] - data.sequence[n].entry[t].rdata[dim_index[j]]));
+                sigma[i][j] /= norm_const;
             }
 
         /* Calculating the inverse of the covariance matrix and its determinant */
-        det=find_det(sigma,dim);
-        if(SINGULAR_FAIL)
-        { /* New matrix is singular -- replacing with the old one */
+        det = find_det(sigma, dim);
+        if (SINGULAR_FAIL) { /* New matrix is singular -- replacing with the old one */
             /* !!! Need better solution !!! */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                    sigma[i][j]=inv_sigma[i][j];
-            det=find_det(sigma,dim);
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++)
+                    sigma[i][j] = inv_sigma[i][j];
+            det = find_det(sigma, dim);
 
-            if(!is_done)
-            { /* Stopping EM */
-                is_done=1;
+            if (!is_done) { /* Stopping EM */
+                is_done = true;
                 num_failed++;
             } /* Stopping EM */
 
         } /* New matrix is singular -- replacing with the old one */
 
-        find_inv(sigma,dim,inv_sigma);
+        find_inv(sigma, dim, inv_sigma);
 
     }
 
-    void UpdateEmissionARGaussian(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionARGaussian(Data data, double[][] prob_s, double norm_const) {
 
-        double[]prev_datum_ave;       // Weighted previous datum
-        double[][]W_num,W_denom;    // Matrices used to calculate W
+        double[] prev_datum_ave;       // Weighted previous datum
+        double[][] W_num, W_denom;    // Matrices used to calculate W
 
 
         /* Temporary variable(s) */
-        double sum,temp1,temp2;
+        double sum, temp1, temp2;
 
         /* First state updates */
 
         /* First state mean */
-        for (int i =0;i<dim; i++)
-        { /* i-th component of the first state mean */
-            first_mu[i]=0.0;
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                    first_mu[i]+=(prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[i]]);
-            first_mu[i]/=norm_const;
+        for (int i = 0; i < dim; i++) { /* i-th component of the first state mean */
+            first_mu[i] = 0.0;
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++)
+                    first_mu[i] += (prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[i]]);
+            first_mu[i] /= norm_const;
         } /* i-th component of the first state mean */
 
         /* First state covariance matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            { /* (i,j)-th entry of the covariance matrix */
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) { /* (i,j)-th entry of the covariance matrix */
                 /* Storing old values for the case the new matrix is singular */
-                inv_first_sigma[i][j]=first_sigma[i][j];
+                inv_first_sigma[i][j] = first_sigma[i][j];
 
                 /* Updating */
-                first_sigma[i][j]=0.0;
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                        first_sigma[i][j]+=(prob_s[n][t]*
-                                (first_mu[i]-data.sequence[n].entry[t].rdata[dim_index[i]])*
-                                (first_mu[i]-data.sequence[n].entry[t].rdata[dim_index[j]]));
-                first_sigma[i][j]/=norm_const;
+                first_sigma[i][j] = 0.0;
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++)
+                        first_sigma[i][j] += (prob_s[n][t] *
+                                (first_mu[i] - data.sequence[n].entry[t].rdata[dim_index[i]]) *
+                                (first_mu[i] - data.sequence[n].entry[t].rdata[dim_index[j]]));
+                first_sigma[i][j] /= norm_const;
             } /* (i,j)-th entry of the covariance matrix */
 
         /* Calculating the inverse of the first state covariance matrix and its determinant */
-        first_det=find_det(first_sigma,dim);
-        if(SINGULAR_FAIL)
-        { /* New matrix is singular -- replacing with the old one */
+        first_det = find_det(first_sigma, dim);
+        if (SINGULAR_FAIL) { /* New matrix is singular -- replacing with the old one */
             /* !!! Need better solution !!! */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                    first_sigma[i][j]=inv_first_sigma[i][j];
-            first_det=find_det(first_sigma,dim);
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++)
+                    first_sigma[i][j] = inv_first_sigma[i][j];
+            first_det = find_det(first_sigma, dim);
 
-            if(!is_done)
-            { /* Stopping EM */
-                is_done=1;
+            if (!is_done) { /* Stopping EM */
+                is_done = true;
                 num_failed++;
             } /* Stopping EM */
 
         } /* New matrix is singular -- replacing with the old one */
 
-        find_inv(first_sigma,dim,inv_first_sigma);
+        find_inv(first_sigma, dim, inv_first_sigma);
 
-        if(SINGULAR_FAIL)
+        if (SINGULAR_FAIL)
             return;
 
         /* Auto-regressive parameter updates */
 
         /* Normalization constant */
-        sum=0.0;
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =1;t<data.sequence[n].seq_length;t++)
-                sum+=prob_s[n][t];
+        sum = 0.0;
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 1; t < data.sequence[n].seq_length; t++)
+                sum += prob_s[n][t];
 
         /* Linear transformation matrix */
 
         /* Calculating constant related to the linear transformation matrix update */
-        prev_datum_ave=new double[dim];
+        prev_datum_ave = new double[dim];
 
-        W_num=new double*[dim];
-        for (int i =0;i<dim; i++)
-            W_num[i]=new double[dim];
+        W_num = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            W_num[i] = new double[dim];
 
-        W_denom=new double*[dim];
-        for (int i =0;i<dim; i++)
-            W_denom[i]=new double[dim];
+        W_denom = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            W_denom[i] = new double[dim];
 
-        for (int i =0;i<dim; i++)
-        {
-            prev_datum_ave[i]=0.0;
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =1;t<data.sequence[n].seq_length;t++)
-                    prev_datum_ave[i]+=prob_s[n][t]*data.sequence[n].entry[t-1].rdata[dim_index[i]];
-            prev_datum_ave[i]/=sum;
+        for (int i = 0; i < dim; i++) {
+            prev_datum_ave[i] = 0.0;
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 1; t < data.sequence[n].seq_length; t++)
+                    prev_datum_ave[i] += prob_s[n][t] * data.sequence[n].entry[t - 1].rdata[dim_index[i]];
+            prev_datum_ave[i] /= sum;
         }
 
         /* Updating linear transformation matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            { /* (i,j)-th entry */
-                W_num[i][j]=0.0;
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =1;t<data.sequence[n].seq_length;t++)
-                        W_num[i][j]+=(prob_s[n][t]*data.sequence[n].entry[t-1].rdata[dim_index[i]]*
-                                (data.sequence[n].entry[t-1].rdata[dim_index[j]]-prev_datum_ave[j]));
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) { /* (i,j)-th entry */
+                W_num[i][j] = 0.0;
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 1; t < data.sequence[n].seq_length; t++)
+                        W_num[i][j] += (prob_s[n][t] * data.sequence[n].entry[t - 1].rdata[dim_index[i]] *
+                                (data.sequence[n].entry[t - 1].rdata[dim_index[j]] - prev_datum_ave[j]));
             } /* (i,j)-th entry */
 
-        find_inv(W_num,dim,W_denom);
+        find_inv(W_num, dim, W_denom);
 
-        if(SINGULAR_FAIL)
-        { /* New matrix is singular */
-            if(!is_done)
-            { /* Stopping EM */
-                is_done=1;
+        if (SINGULAR_FAIL) { /* New matrix is singular */
+            if (!is_done) { /* Stopping EM */
+                is_done = true;
                 num_failed++;
             } /* Stopping EM */
-        } /* New matrix is singular */
-        else
-        {
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                { /* (i,j)-th entry */
-                    W_num[i][j]=0.0;
-                    for (int n =0;n<data.num_seqs;n++)
-                        for (int t =1;t<data.sequence[n].seq_length;t++)
-                            W_num[i][j]+=(prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[i]]*
-                                    (data.sequence[n].entry[t-1].rdata[dim_index[j]]-prev_datum_ave[j]));
+        } /* New matrix is singular */ else {
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++) { /* (i,j)-th entry */
+                    W_num[i][j] = 0.0;
+                    for (int n = 0; n < data.num_seqs; n++)
+                        for (int t = 1; t < data.sequence[n].seq_length; t++)
+                            W_num[i][j] += (prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[i]] *
+                                    (data.sequence[n].entry[t - 1].rdata[dim_index[j]] - prev_datum_ave[j]));
                 } /* (i,j)-th entry */
 
             /* Updated W is the product of W_num and W_denom */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                {
-                    W[i][j]=0.0;
-                    for(int i1=0;i1<dim; i1++)
-                        W[i][j]+=W_num[i][i1]*W_denom[i1][j];
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++) {
+                    W[i][j] = 0.0;
+                    for (int i1 = 0; i1 < dim; i1++)
+                        W[i][j] += W_num[i][i1] * W_denom[i1][j];
                 }
         }
 
 
         prev_datum_ave = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             W_num[i] = null;
         W_num = null;
 
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             W_denom[i] = null;
         W_denom = null;
 
-        if(SINGULAR_FAIL)
+        if (SINGULAR_FAIL)
             return;
 
         /* Updating translation and covariance */
@@ -12396,206 +12155,191 @@ public class Distribution {
         /* Not updating translation */
         if (BLAH) {
             /* Translation */
-            for (int i =0;i<dim; i++)
-            { /* i-th component */
-                mu[i]=0.0;
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =1;t<data.sequence[n].seq_length;t++)
-                    {
-                        temp1=0.0;
-                        for (int j =0;j<dim; j++)
-                            temp1+=W[i][j]*data.sequence[n].entry[t-1].rdata[dim_index[j]];
-                        mu[i]+=(prob_s[n][t]*(data.sequence[n].entry[t].rdata[dim_index[i]]-temp1));
+            for (int i = 0; i < dim; i++) { /* i-th component */
+                mu[i] = 0.0;
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 1; t < data.sequence[n].seq_length; t++) {
+                        temp1 = 0.0;
+                        for (int j = 0; j < dim; j++)
+                            temp1 += W[i][j] * data.sequence[n].entry[t - 1].rdata[dim_index[j]];
+                        mu[i] += (prob_s[n][t] * (data.sequence[n].entry[t].rdata[dim_index[i]] - temp1));
                     }
 
-                mu[i]/=sum;
+                mu[i] /= sum;
             } /* i-th component */
         }
 
         /* Noise covariance */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            { /* (i,j)-th entry */
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) { /* (i,j)-th entry */
                 /* Storing previous values */
-                inv_sigma[i][j]=sigma[i][j];
+                inv_sigma[i][j] = sigma[i][j];
 
                 /* Updating */
-                sigma[i][j]=0.0;
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =1;t<data.sequence[n].seq_length;t++)
-                    {
-                        temp1=mu[i]-data.sequence[n].entry[t].rdata[dim_index[i]];
-                        for(int i1=0;i1<dim; i1++)
-                            temp1+=W[i][i1]*data.sequence[n].entry[t-1].rdata[dim_index[i1]];
+                sigma[i][j] = 0.0;
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 1; t < data.sequence[n].seq_length; t++) {
+                        temp1 = mu[i] - data.sequence[n].entry[t].rdata[dim_index[i]];
+                        for (int i1 = 0; i1 < dim; i1++)
+                            temp1 += W[i][i1] * data.sequence[n].entry[t - 1].rdata[dim_index[i1]];
 
-                        temp2=mu[j]-data.sequence[n].entry[t].rdata[dim_index[j]];
-                        for(int i2=0;i2<dim; i2++)
-                            temp2+=W[j][i2]*data.sequence[n].entry[t-1].rdata[dim_index[i2]];
+                        temp2 = mu[j] - data.sequence[n].entry[t].rdata[dim_index[j]];
+                        for (int i2 = 0; i2 < dim; i2++)
+                            temp2 += W[j][i2] * data.sequence[n].entry[t - 1].rdata[dim_index[i2]];
 
-                        sigma[i][j]+=(prob_s[n][t]*temp1*temp2);
+                        sigma[i][j] += (prob_s[n][t] * temp1 * temp2);
                     }
 
-                sigma[i][j]/=sum;
+                sigma[i][j] /= sum;
             } /* (i,j)-th entry */
 
         /* Calculating the inverse of the covariance matrix and its determinant */
-        det=find_det(sigma,dim);
-        if(SINGULAR_FAIL)
-        { /* New matrix is singular -- replacing with the old one */
+        det = find_det(sigma, dim);
+        if (SINGULAR_FAIL) { /* New matrix is singular -- replacing with the old one */
             /* !!! Need better solution !!! */
-            for (int i =0;i<dim; i++)
-                for (int j =0;j<dim; j++)
-                    sigma[i][j]=inv_sigma[i][j];
-            det=find_det(sigma,dim);
+            for (int i = 0; i < dim; i++)
+                for (int j = 0; j < dim; j++)
+                    sigma[i][j] = inv_sigma[i][j];
+            det = find_det(sigma, dim);
 
-            if(!is_done)
-            { /* Stopping EM */
-                is_done=1;
+            if (!is_done) { /* Stopping EM */
+                is_done = true;
                 num_failed++;
             } /* Stopping EM */
 
         } /* New matrix is singular -- replacing with the old one */
 
-        find_inv(sigma,dim,inv_sigma);
+        find_inv(sigma, dim, inv_sigma);
 
         return;
     }
 
-    void UpdateEmissionGaussianChowLiu(Data data,double[][]prob_s,double norm_const){
+    void UpdateEmissionGaussianChowLiu(Data data, double[][] prob_s, double norm_const) {
 
-        double[][]MI;                  // Mutual information
-        int[]best_edge;              // The list of current best edges
+        double[][] MI;                  // Mutual information
+        int[] best_edge;              // The list of current best edges
 
         /* Temporary variable(s) */
-        double temp1,best_MI;
+        double temp1, best_MI;
 
         /* Zeroing out the mean */
-        for (int i =0;i<dim; i++)
-            mu[i]=0.0;
+        for (int i = 0; i < dim; i++)
+            mu[i] = 0.0;
 
         /* Updating the mean */
-        for (int i =0;i<dim; i++)
-        { /* i-th component of the mean */
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                    mu[i]+=(prob_s[n][t]*data.sequence[n].entry[t].rdata[dim_index[i]]);
+        for (int i = 0; i < dim; i++) { /* i-th component of the mean */
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++)
+                    mu[i] += (prob_s[n][t] * data.sequence[n].entry[t].rdata[dim_index[i]]);
 
-            mu[i]/=norm_const;
+            mu[i] /= norm_const;
         } /* i-th component of the mean */
 
         /* First, computing full covariance matrix */
 
         /* Zeroing out the covariance matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-                sigma[i][j]=0.0;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++)
+                sigma[i][j] = 0.0;
 
         /* Updating the covariance matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-            {
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                        sigma[i][j]+=(prob_s[n][t]*
-                                (mu[i]-data.sequence[n].entry[t].rdata[dim_index[i]])*
-                                (mu[j]-data.sequence[n].entry[t].rdata[dim_index[j]]));
-                sigma[i][j]/=norm_const;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++) {
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++)
+                        sigma[i][j] += (prob_s[n][t] *
+                                (mu[i] - data.sequence[n].entry[t].rdata[dim_index[i]]) *
+                                (mu[j] - data.sequence[n].entry[t].rdata[dim_index[j]]));
+                sigma[i][j] /= norm_const;
             }
 
 
         /* Now, applying Chow-Liu tree algorithm to the covariance matrix */
 
         /* Transforming covariance matrix into a correlation matrix */
-        for (int i =0;i<dim; i++)
-            for (int j =i+1;j<dim; j++)
-            {
-                sigma[i][j]/=sqrt(sigma[i][i]*sigma[j][j]);
-                sigma[j][i]=sigma[i][j];
+        for (int i = 0; i < dim; i++)
+            for (int j = i + 1; j < dim; j++) {
+                sigma[i][j] /= sqrt(sigma[i][i] * sigma[j][j]);
+                sigma[j][i] = sigma[i][j];
             }
 
         /* Building the inverse covariance matrix */
         /* Zeroing out first */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<dim; j++)
-                inv_sigma[i][j]=0.0;
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < dim; j++)
+                inv_sigma[i][j] = 0.0;
 
         /* Starting with the identity matrix */
-        for (int i =0;i<dim; i++)
-            inv_sigma[i][i]=1.0;
+        for (int i = 0; i < dim; i++)
+            inv_sigma[i][i] = 1.0;
 
         /* Allocating mutual information lower triangular matrix */
-        MI=new double*[dim];
-        for (int i =0;i<dim; i++)
-            MI[i]=new double[dim];
+        MI = new double[dim][];
+        for (int i = 0; i < dim; i++)
+            MI[i] = new double[dim];
 
         /* Array of best edges */
-        best_edge=new int[dim-1];
+        best_edge = new int[dim - 1];
 
         /* Initializing */
 
         /* Mutual information */
-        for (int i =0;i<dim; i++)
-            for (int j =0;j<i; j++)
-            {
-                MI[i][j]=-0.5*log(1.0-sigma[i][j]*sigma[i][j]);
-                MI[j][i]=MI[i][j];
+        for (int i = 0; i < dim; i++)
+            for (int j = 0; j < i; j++) {
+                MI[i][j] = -0.5 * log(1.0 - sigma[i][j] * sigma[i][j]);
+                MI[j][i] = MI[i][j];
             }
 
         /* Initializing the list of connected nodes */
-        node_used[dim-1]=1;
-        for (int i =0;i<dim-1;i++)
-            node_used[i]=0;
+        node_used[dim - 1] = true;
+        for (int i = 0; i < dim - 1; i++)
+            node_used[i] = false;
 
         /* Initializing the array of best edges */
         /* Current best edge is always from the only "attached" node */
-        for (int i =0;i<dim-1;i++)
-            best_edge[i]=dim-1;
+        for (int i = 0; i < dim - 1; i++)
+            best_edge[i] = dim - 1;
 
         /* Inserting dim-1 edges */
-        for (int num_edges =0;num_edges<dim-1;num_edges++)
-        {
-            best_MI=NEG_INF;
-            i1=-1;
-            for (int i =0;i<dim-1;i++)
-                if(!node_used[i])
-                    if(MI[i][best_edge[i]]>best_MI)
-                    { /* Found a better edge */
-                        i1=i;
-                        best_MI=MI[i][best_edge[i]];
+        for (int num_edges = 0; num_edges < dim - 1; num_edges++) {
+            best_MI = NEG_INF;
+            int i1 = -1;
+            for (int i = 0; i < dim - 1; i++)
+                if (!node_used[i])
+                    if (MI[i][best_edge[i]] > best_MI) { /* Found a better edge */
+                        i1 = i;
+                        best_MI = MI[i][best_edge[i]];
                     } /* Found a better edge */
 
             /* Adding the edge */
-            node_used[i1]=1;
-            if(i1>best_edge[i1])
-            {
-                edge[num_edges][0]=i1;
-                edge[num_edges][1]=best_edge[i1];
-            }
-            else
-            {
-                edge[num_edges][0]=best_edge[i1];
-                edge[num_edges][1]=i1;
+            node_used[i1] = true;
+            if (i1 > best_edge[i1]) {
+                edge[num_edges][0] = i1;
+                edge[num_edges][1] = best_edge[i1];
+            } else {
+                edge[num_edges][0] = best_edge[i1];
+                edge[num_edges][1] = i1;
             }
 
             /* Storing the information about the edge */
-            edge_MI[num_edges]=best_MI;
+            edge_MI[num_edges] = best_MI;
 
             /* Updating the inverse covariance matrix */
-            temp1=sigma[edge[num_edges][0]][edge[num_edges][1]];
-            inv_sigma[edge[num_edges][0]][edge[num_edges][0]]+=(temp1*temp1)/(1.0-temp1*temp1);
-            inv_sigma[edge[num_edges][1]][edge[num_edges][1]]+=(temp1*temp1)/(1.0-temp1*temp1);
-            inv_sigma[edge[num_edges][0]][edge[num_edges][1]]=-temp1/(1.0-temp1*temp1);
-            inv_sigma[edge[num_edges][1]][edge[num_edges][0]]=inv_sigma[edge[num_edges][0]][edge[num_edges][1]];
+            temp1 = sigma[edge[num_edges][0]][edge[num_edges][1]];
+            inv_sigma[edge[num_edges][0]][edge[num_edges][0]] += (temp1 * temp1) / (1.0 - temp1 * temp1);
+            inv_sigma[edge[num_edges][1]][edge[num_edges][1]] += (temp1 * temp1) / (1.0 - temp1 * temp1);
+            inv_sigma[edge[num_edges][0]][edge[num_edges][1]] = -temp1 / (1.0 - temp1 * temp1);
+            inv_sigma[edge[num_edges][1]][edge[num_edges][0]] = inv_sigma[edge[num_edges][0]][edge[num_edges][1]];
 
             /* Adjusting the list of best edges to not-yet-connected nodes */
-            for (int i =0;i<dim-1;i++)
-                if(!node_used[i])
-                    if(MI[i][i1]>MI[i][best_edge[i]])
-                        best_edge[i]=i1;
+            for (int i = 0; i < dim - 1; i++)
+                if (!node_used[i])
+                    if (MI[i][i1] > MI[i][best_edge[i]])
+                        best_edge[i] = i1;
         }
 
         /* Deallocating mutual information */
-        for (int i =0;i<dim; i++)
+        for (int i = 0; i < dim; i++)
             MI[i] = null;
         MI = null;
 
@@ -12603,24 +12347,21 @@ public class Distribution {
         best_edge = null;
 
         /* Adjusting the inverse covariance matrix -- dividing by appropriate deviation values */
-        for (int i =0;i<dim; i++)
-            inv_sigma[i][i]/=sigma[i][i];
-        for (int i =0;i<num_edges; i++)
-        {
-            inv_sigma[edge[i][0]][edge[i][1]]/=sqrt(sigma[edge[i][0]][edge[i][0]]*sigma[edge[i][1]][edge[i][1]]);
-            inv_sigma[edge[i][1]][edge[i][0]]=inv_sigma[edge[i][0]][edge[i][1]];
+        for (int i = 0; i < dim; i++)
+            inv_sigma[i][i] /= sigma[i][i];
+        for (int i = 0; i < num_edges; i++) {
+            inv_sigma[edge[i][0]][edge[i][1]] /= sqrt(sigma[edge[i][0]][edge[i][0]] * sigma[edge[i][1]][edge[i][1]]);
+            inv_sigma[edge[i][1]][edge[i][0]] = inv_sigma[edge[i][0]][edge[i][1]];
         }
 
         /* Calculating the new covariance matrix */
         /* !!! May be replaced by a more efficient procedure !!! */
-        find_inv(inv_sigma,dim,sigma);
+        find_inv(inv_sigma, dim, sigma);
         /* Calculating the inverse of the covariance matrix and its determinant */
-        det=find_det(sigma,dim);
-        if(SINGULAR_FAIL)
-        { /* New matrix is singular */
-            if(!is_done)
-            { /* Stopping EM */
-                is_done=1;
+        det = find_det(sigma, dim);
+        if (SINGULAR_FAIL) { /* New matrix is singular */
+            if (!is_done) { /* Stopping EM */
+                is_done = true;
                 num_failed++;
             } /* Stopping EM */
         } /* New matrix is singular */
@@ -12628,275 +12369,258 @@ public class Distribution {
         return;
     }
 
-    void UpdateLogistic(Data data,double[][]prob_s){
-        double[][][]function_value;                // Value of each function for each datum (not counting the variable)
-        double[][][]lambda_sum_f;                   // Linear sums in the exponents (contribution from each state value)
-        double[]sum_function_values;             // Sum of function values over all vectors
-        double[][][]p;                             // Probability P(x|y, current parameters)
-        double wll=0.0;                          // Current weighted log-likelihood
-        double prev_wll=NEG_INF;                 // Previous value of weighted log-likelihood 
-        double norm_const=0.0;                   // Normalization constant for data weights
-        int iteration=0;                        // Iteration of the conjugate gradient algorithm
-        double[]gradient,old_gradient;         // Gradient of the weighted log-likelihood
-        double[]xi;                              // Direction of the ascent
-        double[][][]xi_sum_f;                      // Linear sums in the exponents (contribution from the direction)
-        double gamma,gamma_pr,gamma_fr;        // Coefficient used in determining the direction of the ascent
+    void UpdateLogistic(Data data, double[][] prob_s) {
+        double[][][] function_value;                // Value of each function for each datum (not counting the variable)
+        double[][][] lambda_sum_f;                   // Linear sums in the exponents (contribution from each state value)
+        double[] sum_function_values;             // Sum of function values over all vectors
+        double[][][] p;                             // Probability P(x|y, current parameters)
+        double wll = 0.0;                          // Current weighted log-likelihood
+        double prev_wll = NEG_INF;                 // Previous value of weighted log-likelihood
+        double norm_const = 0.0;                   // Normalization constant for data weights
+        int iteration = 0;                        // Iteration of the conjugate gradient algorithm
+        double[] gradient, old_gradient;         // Gradient of the weighted log-likelihood
+        double[] xi;                              // Direction of the ascent
+        double[][][] xi_sum_f;                      // Linear sums in the exponents (contribution from the direction)
+        double gamma, gamma_pr, gamma_fr;        // Coefficient used in determining the direction of the ascent
         double nu;                               // The solution of the linear search problem
         int iteration_nr;                       // Newton-Raphson iteration index
-        double d1,d2;                            // First and second derivative of the log-likelihood
+        double d1, d2;                            // First and second derivative of the log-likelihood
 
         /* Temporary variable(s) */
-        double gg,og,oo;
+        double gg, og, oo;
         double temp;
         DataPoint datum;                        // Current data vector
         double max;
 
         /* Allocating the array of function values for each datum */
-        function_value=new double[dim][][];
-        for (int i =0;i<dim; i++)
-        {
-            function_value[i]=new double[data.num_seqs][];
-            for (int n =0;n<data.num_seqs;n++)
-                function_value[i][n]=new double[data.sequence[n].seq_length];
+        function_value = new double[dim][][];
+        for (int i = 0; i < dim; i++) {
+            function_value[i] = new double[data.num_seqs][];
+            for (int n = 0; n < data.num_seqs; n++)
+                function_value[i][n] = new double[data.sequence[n].seq_length];
         }
 
         /* Allocating the array of linear sums for each datum */
-        lambda_sum_f=new double[num_states][][];
-        for (int i =0;i<num_states; i++)
-        {
-            lambda_sum_f[i]=new double[data.num_seqs][];
-            for (int n =0;n<data.num_seqs;n++)
-                lambda_sum_f[i][n]=new double[data.sequence[n].seq_length];
+        lambda_sum_f = new double[num_states][][];
+        for (int i = 0; i < num_states; i++) {
+            lambda_sum_f[i] = new double[data.num_seqs][];
+            for (int n = 0; n < data.num_seqs; n++)
+                lambda_sum_f[i][n] = new double[data.sequence[n].seq_length];
         }
 
         /* Allocating the array for sum of features */
-        sum_function_values=new double[dim];
+        sum_function_values = new double[dim];
 
         /* Allocating the array of probabilities for data under current model */
-        p=new double[num_states][][];
-        for (int i =0;i<num_states; i++)
-        {
-            p[i]=new double[data.num_seqs][];
-            for (int n =0;n<data.num_seqs;n++)
-                p[i][n]=new double[data.sequence[n].seq_length];
+        p = new double[num_states][][];
+        for (int i = 0; i < num_states; i++) {
+            p[i] = new double[data.num_seqs][];
+            for (int n = 0; n < data.num_seqs; n++)
+                p[i][n] = new double[data.sequence[n].seq_length];
         }
 
         /* Allocating the vector with current direction for the ascent */
-        xi=new double[dim];
+        xi = new double[dim];
 
-        xi_sum_f=new double[num_states][][];
-        for (int i =0;i<num_states; i++)
-        {
-            xi_sum_f[i]=new double[data.num_seqs][];
-            for (int n =0;n<data.num_seqs;n++)
-                xi_sum_f[i][n]=new double[data.sequence[n].seq_length];
+        xi_sum_f = new double[num_states][][];
+        for (int i = 0; i < num_states; i++) {
+            xi_sum_f[i] = new double[data.num_seqs][];
+            for (int n = 0; n < data.num_seqs; n++)
+                xi_sum_f[i][n] = new double[data.sequence[n].seq_length];
         }
 
-        for (int i =0;i<num_states; i++)
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                    lambda_sum_f[i][n][t]=0.0;
+        for (int i = 0; i < num_states; i++)
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++)
+                    lambda_sum_f[i][n][t] = 0.0;
 
-        for (int i =0;i<dim; i++)
-            sum_function_values[i]=0.0;
+        for (int i = 0; i < dim; i++)
+            sum_function_values[i] = 0.0;
 
         /* Precomputing values */
-        for (int n =0;n<data.num_seqs;n++)
-            for (int t =0;t<data.sequence[n].seq_length;t++)
-            {
-                datum=data.sequence[n].entry[t];
+        for (int n = 0; n < data.num_seqs; n++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++) {
+                datum = data.sequence[n].entry[t];
 
                 /* Computing the function value */
-                for (int i =0;i<dim; i++)
-                {
-                    function_value[i][n][t]=1.0;
-                    for (int j =1;j<num_features[i];j++)
-                        if(feature_index[i][j]<datum.ddim)
-                        { /* Categorical feature */
-                            if(feature_value[i][j]!=datum.ddata[feature_index[i][j]])
-                            {
-                                function_value[i][n][t]=0.0;
+                for (int i = 0; i < dim; i++) {
+                    function_value[i][n][t] = 1.0;
+                    for (int j = 1; j < num_features[i]; j++)
+                        if (feature_index[i][j] < datum.ddim) { /* Categorical feature */
+                            if (feature_value[i][j] != datum.ddata[feature_index[i][j]]) {
+                                function_value[i][n][t] = 0.0;
                                 /* No need to look at other features for this function */
-                                j=num_features[i];
+                                j = num_features[i];
                             }
-                        } /* Categorical feature */
-                        else
+                        } /* Categorical feature */ else
                             /* Real-valued feature */
-                            function_value[i][n][t]*=datum.rdata[feature_index[i][j]-datum.ddim];
+                            function_value[i][n][t] *= datum.rdata[feature_index[i][j] - datum.ddim];
                 }
 
-                for (int i =0;i<dim; i++)
+                for (int i = 0; i < dim; i++)
                     /* Considering function i */
                     /* Computing the linear sums in the exponents */
-                    lambda_sum_f[feature_value[i][0]][n][t]+=lambda[i]*function_value[i][n][t];
+                    lambda_sum_f[feature_value[i][0]][n][t] += lambda[i] * function_value[i][n][t];
 
                 /* Computing weighted log-likelihood */
                 /* For scaling reasons, finding the max of the exponents */
-                max=lambda_sum_f[0][n][t];
-                for (int i =1;i<num_states; i++)
-                    if(lambda_sum_f[i][n][t]>max)
-                        max=lambda_sum_f[i][n][t];
+                max = lambda_sum_f[0][n][t];
+                for (int i = 1; i < num_states; i++)
+                    if (lambda_sum_f[i][n][t] > max)
+                        max = lambda_sum_f[i][n][t];
 
                 /* Computing the (scaled) partition function */
-                temp=0.0;
-                for (int i =0;i<num_states; i++)
-                    temp+=exp(lambda_sum_f[i][n][t]-max);
+                temp = 0.0;
+                for (int i = 0; i < num_states; i++)
+                    temp += exp(lambda_sum_f[i][n][t] - max);
 
-                wll+=prob_s[n][t]*(lambda_sum_f[datum.ddata[0]][n][t]-max-log(temp));
+                wll += prob_s[n][t] * (lambda_sum_f[datum.ddata[0]][n][t] - max - log(temp));
 
-                for (int i =0;i<num_states; i++)
-                    p[i][n][t]=exp(lambda_sum_f[i][n][t]-max)/temp;
+                for (int i = 0; i < num_states; i++)
+                    p[i][n][t] = exp(lambda_sum_f[i][n][t] - max) / temp;
 
                 /* Computing sum of function values */
-                for (int i =0;i<dim; i++)
-                    if(datum.ddata[0]==feature_value[i][0])
-                        sum_function_values[i]+=prob_s[n][t]*function_value[i][n][t];
+                for (int i = 0; i < dim; i++)
+                    if (datum.ddata[0] == feature_value[i][0])
+                        sum_function_values[i] += prob_s[n][t] * function_value[i][n][t];
 
                 /* Updating the normalization constant for weights */
-                norm_const+=prob_s[n][t];
+                norm_const += prob_s[n][t];
             }
 
         /* Normalizing log-likelihood by the sum of the weights */
-        wll/=norm_const;
+        wll /= norm_const;
 
-        old_gradient=null;gradient=null;   // Not to trigger compiler warnings
-        while((wll-prev_wll)/norm_const>cg_epsilon)
-        { /* Main loop */
-            prev_wll=wll;
+        old_gradient = null;
+        gradient = null;   // Not to trigger compiler warnings
+        while ((wll - prev_wll) / norm_const > cg_epsilon) { /* Main loop */
+            prev_wll = wll;
 
             /* Computing the gradient */
-            if(iteration>0)
-            {
-                if(iteration>1)
+            if (iteration > 0) {
+                if (iteration > 1)
                     old_gradient = null;
-                old_gradient=gradient;
+                old_gradient = gradient;
             }
 
-            gradient=new double[dim];
-            for (int i =0;i<dim; i++)
-                gradient[i]=sum_function_values[i];
+            gradient = new double[dim];
+            for (int i = 0; i < dim; i++)
+                gradient[i] = sum_function_values[i];
 
-            for (int i =0;i<dim; i++)
-            {
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                    {
-                        datum=data.sequence[n].entry[t];
-                        gradient[i]-=prob_s[n][t]*p[feature_value[i][0]][n][t]*function_value[i][n][t];
+            for (int i = 0; i < dim; i++) {
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++) {
+                        datum = data.sequence[n].entry[t];
+                        gradient[i] -= prob_s[n][t] * p[feature_value[i][0]][n][t] * function_value[i][n][t];
                     }
-                gradient[i]/=norm_const;
+                gradient[i] /= norm_const;
             }
 
             /* Computing the new direction */
-            if(iteration==0)
-                for (int i =0;i<dim; i++)
-                    xi[i]=-gradient[i];
-            else
-            {
-                gg=0.0;
-                og=0.0;
-                oo=0.0;
-                for (int i =0;i<dim; i++)
-                {
-                    gg+=gradient[i]*gradient[i];
-                    og+=gradient[i]*old_gradient[i];
-                    oo+=old_gradient[i]*old_gradient[i];
+            if (iteration == 0)
+                for (int i = 0; i < dim; i++)
+                    xi[i] = -gradient[i];
+            else {
+                gg = 0.0;
+                og = 0.0;
+                oo = 0.0;
+                for (int i = 0; i < dim; i++) {
+                    gg += gradient[i] * gradient[i];
+                    og += gradient[i] * old_gradient[i];
+                    oo += old_gradient[i] * old_gradient[i];
                 }
 
-                gamma_pr=(gg-og)/oo;  // Polak-Ribiere
-                gamma_fr=gg/oo;       // Fletcher-Reeves
+                gamma_pr = (gg - og) / oo;  // Polak-Ribiere
+                gamma_fr = gg / oo;       // Fletcher-Reeves
 
-                if(gamma_pr<-gamma_fr)
-                    gamma=-gamma_fr;
-                else if(gamma_pr>gamma_fr)
-                    gamma=gamma_fr;
+                if (gamma_pr < -gamma_fr)
+                    gamma = -gamma_fr;
+                else if (gamma_pr > gamma_fr)
+                    gamma = gamma_fr;
                 else
-                    gamma=gamma_pr;
+                    gamma = gamma_pr;
 
-                for (int i =0;i<dim; i++)
-                    xi[i]=gradient[i]-gamma*old_gradient[i];
+                for (int i = 0; i < dim; i++)
+                    xi[i] = gradient[i] - gamma * old_gradient[i];
             }
 
             /* Line search optimization algorithm */
 
             /* Pre-computing commonly used values */
             /* Exponent contribution from the new direction */
-            for (int n =0;n<data.num_seqs;n++)
-                for (int t =0;t<data.sequence[n].seq_length;t++)
-                {
-                    datum=data.sequence[n].entry[t];
-                    for (int i =0;i<num_states; i++)
-                        xi_sum_f[i][n][t]=0.0;
+            for (int n = 0; n < data.num_seqs; n++)
+                for (int t = 0; t < data.sequence[n].seq_length; t++) {
+                    datum = data.sequence[n].entry[t];
+                    for (int i = 0; i < num_states; i++)
+                        xi_sum_f[i][n][t] = 0.0;
 
-                    for (int i =0;i<dim; i++)
+                    for (int i = 0; i < dim; i++)
                         /* Considering function i */
                         /* Computing the linear sums in the exponents */
-                        xi_sum_f[feature_value[i][0]][n][t]+=xi[i]*function_value[i][n][t];
+                        xi_sum_f[feature_value[i][0]][n][t] += xi[i] * function_value[i][n][t];
                 }
 
-            nu=0.0;
-            iteration_nr=0;
+            nu = 0.0;
+            iteration_nr = 0;
 
             /* Newton-Raphson */
-            d1=norm_const;   // Not to trigger compiler warnings
-            while((iteration_nr==0||abs(d1)/norm_const>NR_EPSILON)&&iteration_nr<MAX_NR_ITERATIONS )
-            {
+            d1 = norm_const;   // Not to trigger compiler warnings
+            while ((iteration_nr == 0 || abs(d1) / norm_const > NR_EPSILON) && iteration_nr < MAX_NR_ITERATIONS) {
                 iteration_nr++;
 
                 /* First derivative */
-                d1=0.0;
-                for (int i =0;i<dim; i++)
-                    d1+=sum_function_values[i]*xi[i];
+                d1 = 0.0;
+                for (int i = 0; i < dim; i++)
+                    d1 += sum_function_values[i] * xi[i];
 
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                        for (int i =0;i<num_states; i++)
-                            d1-=prob_s[n][t]*p[i][n][t]*xi_sum_f[i][n][t];
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++)
+                        for (int i = 0; i < num_states; i++)
+                            d1 -= prob_s[n][t] * p[i][n][t] * xi_sum_f[i][n][t];
 
-                d2=0.0;
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                        for (int i =0;i<num_states; i++)
-                            d2-=prob_s[n][t]*xi_sum_f[i][n][t]*xi_sum_f[i][n][t]*p[i][n][t]*(1.0-p[i][n][t]);
+                d2 = 0.0;
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++)
+                        for (int i = 0; i < num_states; i++)
+                            d2 -= prob_s[n][t] * xi_sum_f[i][n][t] * xi_sum_f[i][n][t] * p[i][n][t] * (1.0 - p[i][n][t]);
 
-                nu-=d1/d2;
+                nu -= d1 / d2;
 
                 /* Updating the probabilities */
-                for (int n =0;n<data.num_seqs;n++)
-                    for (int t =0;t<data.sequence[n].seq_length;t++)
-                    {
-                        datum=data.sequence[n].entry[t];
+                for (int n = 0; n < data.num_seqs; n++)
+                    for (int t = 0; t < data.sequence[n].seq_length; t++) {
+                        datum = data.sequence[n].entry[t];
 
-                        for (int i =0;i<dim; i++)
+                        for (int i = 0; i < dim; i++)
                             /* Considering function i */
                             /* Computing the linear sums in the exponents */
-                            lambda_sum_f[feature_value[i][0]][n][t]+=nu*xi[i]*function_value[i][n][t];
+                            lambda_sum_f[feature_value[i][0]][n][t] += nu * xi[i] * function_value[i][n][t];
 
                         /* Computing weighted log-likelihood */
                         /* For scaling reasons, finding the max of the exponents */
-                        max=lambda_sum_f[0][n][t];
-                        for (int i =1;i<num_states; i++)
-                            if(lambda_sum_f[i][n][t]>max)
-                                max=lambda_sum_f[i][n][t];
+                        max = lambda_sum_f[0][n][t];
+                        for (int i = 1; i < num_states; i++)
+                            if (lambda_sum_f[i][n][t] > max)
+                                max = lambda_sum_f[i][n][t];
 
                         /* Computing the (scaled) partition function */
-                        temp=0.0;
-                        for (int i =0;i<num_states; i++)
-                            temp+=exp(lambda_sum_f[i][n][t]-max);
+                        temp = 0.0;
+                        for (int i = 0; i < num_states; i++)
+                            temp += exp(lambda_sum_f[i][n][t] - max);
 
-                        wll+=prob_s[n][t]*(lambda_sum_f[datum.ddata[0]][n][t]-max-log(temp));
+                        wll += prob_s[n][t] * (lambda_sum_f[datum.ddata[0]][n][t] - max - log(temp));
 
-                        for (int i =0;i<num_states; i++)
-                            p[i][n][t]=exp(lambda_sum_f[i][n][t]-max)/temp;
+                        for (int i = 0; i < num_states; i++)
+                            p[i][n][t] = exp(lambda_sum_f[i][n][t] - max) / temp;
                     }
             }
 
             /* Updating the parameters */
-            for (int i =0;i<dim; i++)
-                lambda[i]+=nu*xi[i];
+            for (int i = 0; i < dim; i++)
+                lambda[i] += nu * xi[i];
 
             /* Updating sums of features */
-      /* Already updated 
+      /* Already updated
 	 for (int n=0;n<num_points; n++ )
 	 delta_sum_f[n]+=nu*xi_sum_f[n];
       */
@@ -12916,9 +12640,8 @@ public class Distribution {
         } /* Main loop */
 
         /* Deallocating */
-        for (int i =0;i<num_states; i++)
-        {
-            for (int n =0;n<data.num_seqs;n++)
+        for (int i = 0; i < num_states; i++) {
+            for (int n = 0; n < data.num_seqs; n++)
                 xi_sum_f[i][n] = null;
             xi_sum_f[i] = null;
         }
@@ -12926,33 +12649,29 @@ public class Distribution {
 
         xi = null;
 
-        if(iteration>0)
-        {
+        if (iteration > 0) {
             gradient = null;
-            if(iteration>1)
+            if (iteration > 1)
                 old_gradient = null;
         }
 
         sum_function_values = null;
 
-        for (int i =0;i<num_states; i++)
-        {
-            for (int n =0;n<data.num_seqs;n++)
+        for (int i = 0; i < num_states; i++) {
+            for (int n = 0; n < data.num_seqs; n++)
                 p[i][n] = null;
             p[i] = null;
         }
 
-        for (int i =0;i<num_states; i++)
-        {
-            for (int n =0;n<data.num_seqs;n++)
+        for (int i = 0; i < num_states; i++) {
+            for (int n = 0; n < data.num_seqs; n++)
                 lambda_sum_f[i][n] = null;
             lambda_sum_f[i] = null;
         }
         lambda_sum_f = null;
 
-        for (int i =0;i<dim; i++)
-        {
-            for (int n =0;n<data.num_seqs;n++)
+        for (int i = 0; i < dim; i++) {
+            for (int n = 0; n < data.num_seqs; n++)
                 function_value[i][n] = null;
             function_value[i] = null;
         }

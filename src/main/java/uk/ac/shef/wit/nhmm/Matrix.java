@@ -157,7 +157,7 @@ public class Matrix {
         return true;
     }
 
-    void cholesky(double[][] a, int dim, double[][] output) {
+    static void cholesky(double[][] a, int dim, double[][] output) {
   /* Find Cholesky decomposition C of a positive definite matrix A.
      C is a upper-triangular matrix (in agreement with Matlab) such that 
      C'*C=A. 

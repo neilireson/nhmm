@@ -21,6 +21,7 @@ public class Constants {
     public static final boolean VITERBI_VERBOSE = true;
     public static final boolean VERBOSE_BRIEF = true;
     public static final boolean XVAL_VERBOSE = true;
+    public static final boolean NEWTONRAPHSON_VERBOSE = true;
 
     public static final boolean MEASURE_TIME = true;
     

@@ -4,11 +4,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 
+import static java.lang.Math.ceil;
 import static java.lang.Math.sqrt;
 import static uk.ac.shef.wit.nhmm.Constants.*;
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
+import static uk.ac.shef.wit.nhmm.Envelope.*;
 
 public class NHMM {
+
+    private static final boolean FINAL_CHECK = false;
 
     Parameters params;               // Parameters for the file
     HMM theta = null;                  // Parameters of the HMM
@@ -21,7 +25,7 @@ public class NHMM {
     File input_file = null;            // Input file
     File extra_file = null;            // Extra data file
     File model_file = null;            // File with values of parameters for the model
-    File state_output_file = null;     // File to write states to
+    PrintStream state_output_stream = null;     // File to write states to
 
     PrintStream output_stream = null;           // Output file
 
@@ -49,7 +53,7 @@ public class NHMM {
         StateData best_states;            // Most likely sequences of states according to the model and the data
 
         int num_xval_sets = 0;                // Number of cross-validation sets
-        int num_seqs;                     // Number of sequences to be simulated
+        int num_seqs = 0;                     // Number of sequences to be simulated
 
         double[] kl;                        // Entropy and the KL-divergence
 
@@ -218,13 +222,10 @@ public class NHMM {
                     case ACTION_CODE_KL:
                         break;
                     default:
-                        ;
                 }
                 break;
             default:
-                ;
         }
-
 
         /* Looping over cross-validation sets */
         for (int xval_index = 0; xval_index < num_xval_sets; xval_index++) {
@@ -332,11 +333,9 @@ public class NHMM {
                         case ACTION_CODE_KL:
                             break;
                         default:
-                            ;
                     }
                     break;
                 default:
-                    ;
             }
 
             if (XVAL_VERBOSE) {
@@ -375,15 +374,15 @@ public class NHMM {
                     break;
                 case ACTION_CODE_LL:
                 case ACTION_CODE_LLTRAIN:
-                    RunLogLikelihoodData(current_output_data, current_input_data, passed_theta[xval_index], output_file);
+                    RunLogLikelihoodData(current_output_data, current_input_data, passed_theta[xval_index], output_stream);
                     break;
                 case ACTION_CODE_SIM:
                     for (int i = 0; i < params.num_simulations; i++)
                         RunSimulateData(current_input_data,
                                 passed_theta[xval_index],
                                 params,
-                                state_output_file,
-                                output_file,
+                                state_output_stream,
+                                output_stream,
                                 num_seqs);
                     break;
                 case ACTION_CODE_ANALYZE:
@@ -393,13 +392,13 @@ public class NHMM {
                         output_stream.format("%d\n", CompareDataSets(current_output_data, current_input_data));
                     break;
                 case ACTION_CODE_FILLING:
-                    RunHoleData(current_output_data, current_input_data, passed_theta[xval_index], output_file, params.poking_type);
+                    RunHoleData(current_output_data, current_input_data, passed_theta[xval_index], output_stream, params.poking_type);
                     break;
                 case ACTION_CODE_PREDICT:
-                    RunPredictionData(current_output_data, current_input_data, passed_theta[xval_index], params.lookahead, output_file);
+                    RunPredictionData(current_output_data, current_input_data, passed_theta[xval_index], params.lookahead, output_stream);
                     break;
                 case ACTION_CODE_INIT:
-                    RunGenerateParameters(theta, params.num_models, output_file);
+                    RunGenerateParameters(theta, params.num_models, params.bare_display, output_stream);
                     break;
                 case ACTION_CODE_KL:
                     kl = passed_theta[0].KL(passed_theta[1]);
@@ -407,11 +406,11 @@ public class NHMM {
                     kl = null;
                     break;
                 case ACTION_CODE_DEBUG:
-                    TestDebug(current_output_data, current_input_data, passed_theta[xval_index], output_file);
+                    TestDebug(current_output_data, current_input_data, passed_theta[xval_index], output_stream);
                     break;
                 default:
                     System.err.format("Action is unidentified or unspecified.  Aborting.\n");
-                    return (-1);
+                    return;
             }
         }
 
@@ -474,8 +473,6 @@ public class NHMM {
             end_time = System.currentTimeMillis();
             System.out.format("Elapsed CPU time: %f\n", (double) (end_time - start_time) / (double) 1000);
         }
-
-        return (0);
     }
 
     void RunEvaluate(Data output_data, int option, PrintStream out) {
@@ -744,12 +741,9 @@ public class NHMM {
 
     }
 
-    void ProcessParameters(void) throws IOException {
+    void ProcessParameters() throws IOException {
   /* Making sure that passed parameters are proper, that all necessary
      files are passed and contain needed information */
-
-        /* Index variables */
-        int i, j;
 
         /* Creating templates for data points in data and input files */
         params.output_datum = new DataPoint(params.num_ddata_components,
@@ -764,9 +758,9 @@ public class NHMM {
         maxent_epsilon = params.maxent_epsilon;
 
         /* Reading in the output file if passed */
-        if (params.output_data_filename) {
-            data_file = fopen(params.output_data_filename, "r");
-            if (!data_file) {
+        if (params.output_data_filename != null) {
+            data_file = new File(params.output_data_filename);
+            if (!data_file.isFile()) {
                 System.err.format("Unable to open data file %s for reading. Aborting\n",
                         params.output_data_filename);
                 System.exit(-1);
@@ -775,8 +769,8 @@ public class NHMM {
                     System.out.format("Data file %s successfully opened for reading.\n",
                             params.output_data_filename);
                 }
-                output_data = new Data(params.num_data_seqs, "data\0", 1);
-                if (params.length_data_seq)
+                output_data = new Data(params.num_data_seqs, "data\0", true);
+                if (params.length_data_seq!=null)
                     output_data.ReadDataDistinct(data_file, 0, params.num_data_seqs,
                             params.length_data_seq, params.output_datum);
                 else
@@ -800,7 +794,7 @@ public class NHMM {
                     System.out.format("Input variable file %s successfully opened for reading.\n",
                             params.input_filename);
                 }
-                input_data = new Data(params.num_input_seqs, "input\0", 1);
+                input_data = new Data(params.num_input_seqs, "input\0", true);
                 if (params.length_input_seq != null)
                     input_data.ReadDataDistinct(input_file, 0, params.num_input_seqs,
                             params.length_input_seq, params.input_datum);
@@ -811,9 +805,9 @@ public class NHMM {
         }
 
         /* Reading in the extra data file if passed */
-        if (params.extra_data_filename) {
-            extra_file = fopen(params.input_filename, "r");
-            if (!extra_file) {
+        if (params.extra_data_filename != null) {
+            extra_file = new File(params.input_filename);
+            if (!extra_file.isFile()) {
                 System.err.format("Unable to open extra data file %s for reading.\n",
                         params.extra_data_filename);
             } else {
@@ -821,35 +815,32 @@ public class NHMM {
                     System.out.format("Extra data file %s successfully opened for reading.\n",
                             params.extra_data_filename);
                 }
-                extra_data = new Data(params.num_extra_seqs, "extra\0", 1);
+                extra_data = new Data(params.num_extra_seqs, "extra\0", true);
                 extra_data.ReadData(extra_file, 0, params.num_extra_seqs,
                         params.length_extra_seqs, params.extra_datum);
-
-                /* Closing the input file */
-                fclose(extra_file);
             }
         }
 
-        if (params.input_dim > 0 && !input_data) {
+        if (params.input_dim > 0 && input_data == null) {
             System.err.format("Need input filename to work with input distribution.  Setting number of input components to 0.\n");
             params.input_dim = 0;
         }
 
         /* Output file */
-        if (params.output_filename) { /* Output file listed */
-            output_file = fopen(params.output_filename, "w");
-            if (!output_file) {
+        if (params.output_filename != null) { /* Output file listed */
+            output_stream = new PrintStream(params.output_filename);
+            if (output_stream == null) {
                 System.err.format("Unable to open file %s for writing.  Outputting to screen.\n",
                         params.output_filename);
-                output_file = stdout;
+                output_stream = System.out;
             }
         } /* Output file listed */ else { /* No output file provided -- outputting results to the screen */
-            output_file = stdout;
+            output_stream = System.out;
         } /* No output file provided -- outputting results to the screen */
 
         if (params.action != ACTION_CODE_ANALYZE) { /* HMM model is defined */
             /* Initializing the model structure */
-            if (!params.emission) {
+            if (params.emission == null) {
                 System.err.format("Need to have proper emission distribution defined!  Aborting.\n");
                 System.exit(-1);
             }
@@ -888,11 +879,11 @@ public class NHMM {
                     theta.emission[i][j] = params.emission[i].copy();
 
             /* Reading in the model */
-            if (params.model_filename && params.action != ACTION_CODE_INIT) {
-                model_file = fopen(params.model_filename, "r");
+            if (params.model_filename != null && params.action != ACTION_CODE_INIT) {
+                model_file = new File(params.model_filename);
 
                 /* Correcting the number of models in the file */
-                if (model_file) { /* Reading in the models */
+                if (model_file != null) { /* Reading in the models */
                     switch (params.xval_type) {
                         case XVAL_NONE:
                             switch (params.action) {
@@ -960,14 +951,12 @@ public class NHMM {
                     }
 
                     /* Reading in the model */
-                    passed_theta = new HMM *[params.num_models];
+                    passed_theta = new HMM[params.num_models];
                     for (int i = 0; i < params.num_models; i++) {
                         passed_theta[i] = theta.copy();
                         passed_theta[i].ReadParameters(model_file);
                     }
 
-                    /* Closing the file */
-                    fclose(model_file);
                 } /* Reading in the models */ else {
                     System.err.format("Unable to open model file %s for reading.  Ignoring.\n",
                             params.model_filename);
@@ -978,7 +967,7 @@ public class NHMM {
         /* Determining whether all information is passed for specific action */
         switch (params.action) {
             case ACTION_CODE_LEARN:
-                if (!output_data) { /* No data provided */
+                if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -993,7 +982,7 @@ public class NHMM {
 
                 break;
             case ACTION_CODE_VITERBI:
-                if (!output_data) { /* No data provided */
+                if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -1007,14 +996,14 @@ public class NHMM {
                     }
                 }
 
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'viterbi' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
                 break;
             case ACTION_CODE_LL:
             case ACTION_CODE_LLTRAIN:
-                if (!output_data) { /* No data provided */
+                if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -1028,13 +1017,13 @@ public class NHMM {
                     }
                 }
 
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'll' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
                 break;
             case ACTION_CODE_SIM:
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'simulation' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
@@ -1054,22 +1043,22 @@ public class NHMM {
                 }
 
                 /* Checking whether to open a file for the hidden state sequences */
-                if (params.state_filename) {
-                    state_output_file = fopen(params.state_filename, "w");
-                    if (!state_output_file) {
+                if (params.state_filename != null) {
+                    state_output_stream = new PrintStream(params.state_filename);
+                    if (state_output_stream == null) {
                         System.err.format("Unable to open file %s for writing. Not displaying the states\n",
                                 params.state_filename);
                     }
                 }
 
                 /* No output data is needed */
-                if (output_data) {
+                if (output_data != null) {
                     output_data = null;
                     output_data = null;
                 }
                 break;
             case ACTION_CODE_FILLING:
-                if (!output_data) { /* No data provided */
+                if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -1083,13 +1072,13 @@ public class NHMM {
                     }
                 }
 
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'poking' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
                 break;
             case ACTION_CODE_PREDICT:
-                if (!output_data) { /* No data provided */
+                if (output_data != null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -1103,13 +1092,13 @@ public class NHMM {
                     }
                 }
 
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'prediction' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
                 break;
             case ACTION_CODE_DEBUG:
-                if (!output_data) { /* No data provided */
+                if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
@@ -1123,7 +1112,7 @@ public class NHMM {
                     }
                 }
 
-                if (!passed_theta) {
+                if (passed_theta == null) {
                     System.err.format("Action 'debug' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
                 }
@@ -1136,7 +1125,7 @@ public class NHMM {
         }
 
         if (FINAL_CHECK) {
-            public int em_verbose;
+            boolean em_verbose = false;
 
             System.out.format("Number of states: %d\n", params.num_states);
 
@@ -1189,12 +1178,12 @@ public class NHMM {
                     System.out.format("unknown\n");
             }
 
-            if (params.emission)
+            if (params.emission != null)
                 System.out.format("Emission distribution defined\n");
             if (params.input_dist)
                 System.out.format("Input distribution defined\n");
 
-            if (output_data)
+            if (output_data != null)
                 System.out.format("Output data filename: %s\n", params.output_data_filename);
             else
                 System.out.format("No output data provided\n");
@@ -1226,18 +1215,18 @@ public class NHMM {
                     System.out.format("unknown\n");
             }
 
-            if (passed_theta) {
+            if (passed_theta != null) {
                 System.out.format("Model filename: %s\n", params.model_filename);
                 System.out.format("Number of models: %d\n", params.num_models);
             } else
                 System.out.format("No models passed\n");
 
-            if (output_file != stdout)
+            if (output_stream != System.out)
                 System.out.format("Output file: %s\n", params.output_filename);
             else
                 System.out.format("Outputting to the screen\n");
 
-            if (state_output_file)
+            if (state_output_stream != null)
                 System.out.format("Output file for the simulated states: %s\n", params.state_filename);
 
             System.out.format("Number of random restarts: %d\n", params.num_restarts);
@@ -1258,13 +1247,13 @@ public class NHMM {
                     System.out.format("unknown\n");
             }
 
-            if (params.robust_first_state)
+            if (params.robust_first_state != 0)
                 System.out.format("Calculating first state probabilities from all observations\n");
             else
                 System.out.format("Calculating first state probabilities from first observations only\n");
 
             System.out.format("Number of simulations: %d\n", params.num_simulations);
-            if (params.state_filename)
+            if (params.state_filename != null)
                 System.out.format("Printing simulated hidden state sequences in file %s\n", params.state_filename);
             else
                 System.out.format("No simulated state files\n");
@@ -1333,9 +1322,7 @@ public class NHMM {
     }
 
 
-    void TestDebug(Data data, Data input_data, HMM theta, File output) {
-
-        return;
+    void TestDebug(Data data, Data input_data, HMM theta, PrintStream output) {
     }
 
     int CompareDataSets(Data data1, Data data2) {

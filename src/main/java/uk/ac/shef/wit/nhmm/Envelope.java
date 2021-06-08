@@ -1,9 +1,7 @@
 package uk.ac.shef.wit.nhmm;
 
-import java.io.File;
 import java.io.PrintStream;
 
-import static java.lang.Math.sqrt;
 import static uk.ac.shef.wit.nhmm.Constants.*;
 
 public class Envelope {
@@ -14,9 +12,6 @@ public class Envelope {
     public int num_edges;
     public boolean is_missing;
 
-
-    public boolean em_verbose;
-    public boolean bare_display;
 
     Envelope(int max_num) {
         node = new int[max_num];
@@ -32,7 +27,7 @@ public class Envelope {
         edge = null;
     }
 
-    void RunLogLikelihoodData(Data output_data, Data input_data, HMM theta, PrintStream out) {
+    static void RunLogLikelihoodData(Data output_data, Data input_data, HMM theta, PrintStream out) {
 
         /* Allocating necessary structures */
         theta.AllocateEMStructures(output_data, input_data);
@@ -44,12 +39,12 @@ public class Envelope {
         theta.DeallocateEMStructures(output_data, input_data);
     }
 
-    void RunSimulateData(Data input_data,
-                         HMM theta,
-                         Parameters params,
-                         PrintStream state_output_file,
-                         PrintStream output_file,
-                         int num_seqs) {
+    static void RunSimulateData(Data input_data,
+                                HMM theta,
+                                Parameters params,
+                                PrintStream state_output_file,
+                                PrintStream output_file,
+                                int num_seqs) {
 
         int[][] sim_states; // Simulated states
         Data output_data; // Simulated data
@@ -62,7 +57,7 @@ public class Envelope {
         if (state_output_file != null) { /* Displaying the states */
             for (int n = 0; n < num_seqs; n++)
                 for (int t = 0; t < params.length_data_seqs; t++)
-                    state_output_file.format( "%d\n", sim_states[n][t]);
+                    state_output_file.format("%d\n", sim_states[n][t]);
         } /* Displaying the states */
 
         /* Having generated the state sequences, can generate the data */
@@ -84,7 +79,7 @@ public class Envelope {
         return;
     }
 
-    void RunHoleData(Data output_data, Data input_data, HMM theta, PrintStream out, int hole_type) {
+    static void RunHoleData(Data output_data, Data input_data, HMM theta, PrintStream out, int hole_type) {
 
         Data fillin_data;
 
@@ -123,7 +118,7 @@ public class Envelope {
 
     }
 
-    void RunPredictionData(Data data, Data input, HMM theta, int lookahead, PrintStream out) {
+    static void RunPredictionData(Data data, Data input, HMM theta, int lookahead, PrintStream out) {
         double ll;
 
         theta.AllocateEMStructures(data, input);
@@ -142,8 +137,7 @@ public class Envelope {
             theta.transition.CalculateForwardUpdatesSequence(data.sequence[n], n, 0, theta.log_pb);
 
             for (int t = 0; t < data.sequence[n].seq_length - lookahead + 1;
-            t++ )
-            {
+                 t++) {
                 ll = 0.0;
                 for (int tau = t; tau < t + lookahead; tau++)
                     ll -= theta.transition.log_upd_scale[n][t];
@@ -157,9 +151,10 @@ public class Envelope {
     }
 
 
-    void RunGenerateParameters(HMM theta,
-                               int num_models,
-                               PrintStream output_file) {
+    static void RunGenerateParameters(HMM theta,
+                                      int num_models,
+                                      boolean bare_display,
+                                      PrintStream output_file) {
 
         /* Initializing parameters */
 

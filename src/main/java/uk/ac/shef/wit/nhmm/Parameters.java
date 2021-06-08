@@ -8,8 +8,8 @@ import static uk.ac.shef.wit.nhmm.Distribution.ReadDistribution;
 
 public class Parameters {
     /* Contains possible parameters to the program which can be obtained from
-   the parameter file.
-*/
+       the parameter file.
+    */
     /* Read parameters */
     int num_variables;            // Number of latent variables
     int num_states;               // Number of states for each latent variable
@@ -60,6 +60,7 @@ public class Parameters {
     boolean em_verbose;
     boolean bare_display;
     boolean short_dist_display;
+    boolean input_dist;
 
     Parameters() {
 
