@@ -3,10 +3,12 @@ package uk.ac.shef.wit.nhmm;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Random;
 
 import static java.lang.Math.ceil;
 import static java.lang.Math.sqrt;
 import static uk.ac.shef.wit.nhmm.Constants.*;
+import static uk.ac.shef.wit.nhmm.Constants.DistributionType.*;
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
 import static uk.ac.shef.wit.nhmm.Envelope.*;
 
@@ -64,34 +66,32 @@ public class NHMM {
         }
 
         /* Processing inputs */
-        if (args.length == 1) { /* Displaying help */
-            /* Displaying the version number */
-            System.out.format("Compiled from source with time stamp November 5, 2006.\n");
-
+        if (args.length == 0) { /* Displaying help */
             /* Command line */
-            System.out.format("Usage: mvnhmm <parameter file> [<seed>]\n");
-            test();
+            System.out.format("Usage: nhmm <parameter file> [<seed>]\n");
+            return;
         } /* Displaying help */ else { /* Processing parameters file */
-            param_file = new File(args[1]);
+            param_file = new File(args[0]);
             if (!param_file.isFile()) { /* File not found */
-                System.err.format("Unable to open parameter file %s!  Aborting.\n", args[1]);
+                System.err.format("Unable to open parameter file %s!  Aborting.\n", args[0]);
                 System.exit(-1);
             } /* File not found */
 
             if (INPUT_VERBOSE) {
-                System.out.format("Parameter file %s successfully opened.\n", args[1]);
+                System.out.format("Parameter file %s successfully opened.\n", args[0]);
             }
 
             /* Reading the parameters */
             params = new Parameters();
             params.Read(param_file);
 
-            if (args.length <= 2)
-                seed = 0;
+            if (args.length <= 1)
+                srand48(0);
             else
-                seed = Integer.parseInt(args[2]);
+                srand48(Long.parseLong(args[1]));
 
         } /* Processing parameters file */
+
 
         /* Making sure parameters are ok */
         ProcessParameters();
@@ -103,31 +103,30 @@ public class NHMM {
                 break;
             case XVAL_LEAVENOUT:
                 switch (params.action) {
-                    case ACTION_CODE_LEARN:
-                    case ACTION_CODE_VITERBI:
-                    case ACTION_CODE_LL:
-                    case ACTION_CODE_LLTRAIN:
-                    case ACTION_CODE_FILLING:
-                    case ACTION_CODE_PREDICT:
+                    case learn:
+                    case viterbi:
+                    case ll:
+                    case lltrain:
+                    case filling:
+                    case predict:
                         num_xval_sets = output_data.num_seqs / params.number_out;
                         break;
-                    case ACTION_CODE_SIM:
+                    case sim:
                         num_xval_sets = params.num_models;
                         break;
-                    case ACTION_CODE_ANALYZE:
+                    case analyze:
                         num_xval_sets = output_data.num_seqs / (params.num_simulations * params.number_out);
                         break;
-                    case ACTION_CODE_DEBUG:
+                    case debug:
                         num_xval_sets = output_data.num_seqs / params.number_out;
                         break;
                     default:
-                        ;
                         num_xval_sets = 1;
                 }
                 break;
-            case ACTION_CODE_INIT:
-            case ACTION_CODE_KL:
-                break;
+//            case init:
+//            case kl:
+//                break;
             default:
                 num_xval_sets = 1;
         }
@@ -138,41 +137,41 @@ public class NHMM {
         switch (params.xval_type) {
             case XVAL_NONE:
                 switch (params.action) {
-                    case ACTION_CODE_LEARN:
-                    case ACTION_CODE_VITERBI:
-                    case ACTION_CODE_LL:
-                    case ACTION_CODE_LLTRAIN:
-                    case ACTION_CODE_FILLING:
-                    case ACTION_CODE_PREDICT:
+                    case learn:
+                    case viterbi:
+                    case ll:
+                    case lltrain:
+                    case filling:
+                    case predict:
                         current_output_data = new Data(output_data.num_seqs, "data\0", false);
-                        if (input_data!=null)
+                        if (input_data != null)
                             current_input_data = new Data(input_data.num_seqs, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_SIM:
-                        if (input_data!= null)
+                    case sim:
+                        if (input_data != null)
                             current_input_data = new Data(input_data.num_seqs, "input\0", false);
                         else
                             current_input_data = null;
                         num_seqs = params.num_data_seqs;
                         break;
-                    case ACTION_CODE_ANALYZE:
+                    case analyze:
                         current_output_data = new Data(output_data.num_seqs, "data\0", false);
-                        if (input_data!= null)
+                        if (input_data != null)
                             current_input_data = new Data(input_data.num_seqs, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_DEBUG:
+                    case debug:
                         current_output_data = new Data(output_data.num_seqs, "data\0", false);
-                        if (input_data!= null)
+                        if (input_data != null)
                             current_input_data = new Data(input_data.num_seqs, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_INIT:
-                    case ACTION_CODE_KL:
+                    case init:
+                    case kl:
                         break;
                     default:
                         ;
@@ -180,46 +179,46 @@ public class NHMM {
                 break;
             case XVAL_LEAVENOUT:
                 switch (params.action) {
-                    case ACTION_CODE_LEARN:
-                    case ACTION_CODE_LLTRAIN:
+                    case learn:
+                    case lltrain:
                         current_output_data = new Data(output_data.num_seqs - params.number_out, "data\0", false);
-                        if (input_data!=null)
+                        if (input_data != null)
                             current_input_data = new Data(input_data.num_seqs - params.number_out, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_VITERBI:
-                    case ACTION_CODE_LL:
-                    case ACTION_CODE_FILLING:
-                    case ACTION_CODE_PREDICT:
+                    case viterbi:
+                    case ll:
+                    case filling:
+                    case predict:
                         current_output_data = new Data(params.number_out, "data\0", false);
-                        if (input_data!=null)
+                        if (input_data != null)
                             current_input_data = new Data(params.number_out, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_SIM:
-                        if (input_data!=null)
+                    case sim:
+                        if (input_data != null)
                             current_input_data = new Data(params.number_out, "input\0", false);
                         else
                             current_input_data = null;
                         num_seqs = params.number_out;
                         break;
-                    case ACTION_CODE_ANALYZE:
+                    case analyze:
                         current_output_data = new Data(params.num_simulations * params.number_out, "data\0", false);
-                        if (input_data!=null)
+                        if (input_data != null)
                             current_input_data = new Data(params.num_simulations * params.number_out, "input\0", false);
                         else current_input_data = null;
                         break;
-                    case ACTION_CODE_DEBUG:
+                    case debug:
                         current_output_data = new Data(params.number_out, "data\0", false);
-                        if (input_data!=null)
+                        if (input_data != null)
                             current_input_data = new Data(params.number_out, "input\0", false);
                         else
                             current_input_data = null;
                         break;
-                    case ACTION_CODE_INIT:
-                    case ACTION_CODE_KL:
+                    case init:
+                    case kl:
                         break;
                     default:
                 }
@@ -233,45 +232,45 @@ public class NHMM {
             switch (params.xval_type) {
                 case XVAL_NONE:
                     switch (params.action) {
-                        case ACTION_CODE_LEARN:
+                        case learn:
                             for (int n = 0; n < output_data.num_seqs; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[n];
                             }
                             break;
-                        case ACTION_CODE_VITERBI:
-                        case ACTION_CODE_LL:
-                        case ACTION_CODE_LLTRAIN:
-                        case ACTION_CODE_FILLING:
-                        case ACTION_CODE_PREDICT:
+                        case viterbi:
+                        case ll:
+                        case lltrain:
+                        case filling:
+                        case predict:
                             for (int n = 0; n < output_data.num_seqs; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[n];
                             }
                             break;
-                        case ACTION_CODE_SIM:
-                            if (input_data!=null)
+                        case sim:
+                            if (input_data != null)
                                 for (int n = 0; n < input_data.num_seqs; n++)
                                     current_input_data.sequence[n] = input_data.sequence[n];
                             break;
-                        case ACTION_CODE_ANALYZE:
+                        case analyze:
                             for (int n = 0; n < output_data.num_seqs; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[n];
                             }
                             break;
-                        case ACTION_CODE_DEBUG:
+                        case debug:
                             for (int n = 0; n < output_data.num_seqs; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[n];
                             }
                             break;
-                        case ACTION_CODE_INIT:
-                        case ACTION_CODE_KL:
+                        case init:
+                        case kl:
                             break;
                         default:
                             ;
@@ -279,58 +278,58 @@ public class NHMM {
                     break;
                 case XVAL_LEAVENOUT:
                     switch (params.action) {
-                        case ACTION_CODE_LEARN:
+                        case learn:
                             output_stream.format("%c Best model for set without years %d-%d\n",
                                     COMMENT_SYMBOL, xval_index * params.number_out + 1, (xval_index + 1) * params.number_out);
 
                             if (VERBOSE_BRIEF) {
                                 System.out.format("Set #%d\n", xval_index + 1);
                             }
-                        case ACTION_CODE_LLTRAIN:
+                        case lltrain:
                             int current_n = 0;
 
                             for (int n = 0; n < output_data.num_seqs; n++)
                                 if (n < xval_index * params.number_out || n >= (xval_index + 1) * params.number_out) {
                                     current_output_data.sequence[current_n] = output_data.sequence[n];
-                                    if (input_data!=null)
+                                    if (input_data != null)
                                         current_input_data.sequence[current_n] = input_data.sequence[n];
 
                                     current_n++;
                                 }
                             break;
-                        case ACTION_CODE_VITERBI:
-                        case ACTION_CODE_LL:
-                        case ACTION_CODE_FILLING:
-                        case ACTION_CODE_PREDICT:
+                        case viterbi:
+                        case ll:
+                        case filling:
+                        case predict:
                             for (int n = 0; n < params.number_out; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[xval_index * params.number_out + n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[xval_index * params.number_out + n];
                             }
                             break;
-                        case ACTION_CODE_SIM:
+                        case sim:
                             for (int n = 0; n < params.number_out; n++)
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[xval_index * params.number_out + n];
                             break;
-                        case ACTION_CODE_ANALYZE:
+                        case analyze:
                             for (int n = 0; n < params.num_simulations * params.number_out; n++) {
                                 current_output_data.sequence[n] =
                                         output_data.sequence[xval_index * params.num_simulations * params.number_out + n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] =
                                             input_data.sequence[xval_index * params.num_simulations * params.number_out + n];
                             }
                             break;
-                        case ACTION_CODE_DEBUG:
+                        case debug:
                             for (int n = 0; n < params.number_out; n++) {
                                 current_output_data.sequence[n] = output_data.sequence[xval_index * params.number_out + n];
-                                if (input_data!=null)
+                                if (input_data != null)
                                     current_input_data.sequence[n] = input_data.sequence[xval_index * params.number_out + n];
                             }
                             break;
-                        case ACTION_CODE_INIT:
-                        case ACTION_CODE_KL:
+                        case init:
+                        case kl:
                             break;
                         default:
                     }
@@ -339,24 +338,24 @@ public class NHMM {
             }
 
             if (XVAL_VERBOSE) {
-                System.out.format( "Running cross-validation run %d.\n", xval_index + 1);
-                if (current_output_data!=null)
-                    System.out.format( "Output data consists of %d sequences of length %d each.\n",
+                System.out.format("Running cross-validation run %d.\n", xval_index + 1);
+                if (current_output_data != null)
+                    System.out.format("Output data consists of %d sequences of length %d each.\n",
                             current_output_data.num_seqs, current_output_data.sequence[0].seq_length);
                 else
-                    System.out.format( "No output data created\n");
+                    System.out.format("No output data created\n");
 
-                if (current_input_data!=null)
-                    System.out.format( "Input data consists of %d sequences of length %d each.\n",
+                if (current_input_data != null)
+                    System.out.format("Input data consists of %d sequences of length %d each.\n",
                             current_input_data.num_seqs, current_input_data.sequence[0].seq_length);
                 else
-                    System.out.format( "No input data created\n");
+                    System.out.format("No input data created\n");
 
             }
 
             /* Running model */
             switch (params.action) {
-                case ACTION_CODE_LEARN:
+                case learn:
                     RunLearnParameters(current_output_data,
                             current_input_data,
                             theta,
@@ -364,7 +363,7 @@ public class NHMM {
                             params,
                             output_stream);
                     break;
-                case ACTION_CODE_VITERBI:
+                case viterbi:
                     /* Calculating the most likely sequences of states */
                     best_states = passed_theta[xval_index].viterbi(current_output_data, current_input_data, 1);
                     best_states.WriteToFile(output_stream);
@@ -372,11 +371,11 @@ public class NHMM {
                     /* Deallocating the sequences of states */
                     best_states = null;
                     break;
-                case ACTION_CODE_LL:
-                case ACTION_CODE_LLTRAIN:
+                case ll:
+                case lltrain:
                     RunLogLikelihoodData(current_output_data, current_input_data, passed_theta[xval_index], output_stream);
                     break;
-                case ACTION_CODE_SIM:
+                case sim:
                     for (int i = 0; i < params.num_simulations; i++)
                         RunSimulateData(current_input_data,
                                 passed_theta[xval_index],
@@ -385,29 +384,28 @@ public class NHMM {
                                 output_stream,
                                 num_seqs);
                     break;
-                case ACTION_CODE_ANALYZE:
+                case analyze:
                     if (params.analysis_type != ANALYSIS_COMP)
                         RunEvaluate(current_output_data, params.analysis_type, output_stream);
                     else
                         output_stream.format("%d\n", CompareDataSets(current_output_data, current_input_data));
                     break;
-                case ACTION_CODE_FILLING:
+                case filling:
                     RunHoleData(current_output_data, current_input_data, passed_theta[xval_index], output_stream, params.poking_type);
                     break;
-                case ACTION_CODE_PREDICT:
+                case predict:
                     RunPredictionData(current_output_data, current_input_data, passed_theta[xval_index], params.lookahead, output_stream);
                     break;
-                case ACTION_CODE_INIT:
+                case init:
                     RunGenerateParameters(theta, params.num_models, params.bare_display, output_stream);
                     break;
-                case ACTION_CODE_KL:
+                case kl:
                     kl = passed_theta[0].KL(passed_theta[1]);
                     output_stream.format("%.12f\t%.12f\n", kl[0], kl[1]);
                     kl = null;
                     break;
-                case ACTION_CODE_DEBUG:
-                    TestDebug(current_output_data, current_input_data, passed_theta[xval_index], output_stream);
-                    break;
+                case debug:
+                    throw new UnsupportedOperationException();
                 default:
                     System.err.format("Action is unidentified or unspecified.  Aborting.\n");
                     return;
@@ -416,54 +414,54 @@ public class NHMM {
 
         /* Deallocating data structures */
         switch (params.action) {
-            case ACTION_CODE_LEARN:
-            case ACTION_CODE_VITERBI:
-            case ACTION_CODE_LL:
-            case ACTION_CODE_LLTRAIN:
-            case ACTION_CODE_FILLING:
-            case ACTION_CODE_PREDICT:
+            case learn:
+            case viterbi:
+            case ll:
+            case lltrain:
+            case filling:
+            case predict:
                 current_output_data = null;
-                if (current_input_data!=null)
+                if (current_input_data != null)
                     current_input_data = null;
                 break;
-            case ACTION_CODE_SIM:
-                if (current_input_data!=null)
+            case sim:
+                if (current_input_data != null)
                     current_input_data = null;
                 break;
-            case ACTION_CODE_ANALYZE:
+            case analyze:
                 current_output_data = null;
-                if (current_input_data !=null)
+                if (current_input_data != null)
                     current_input_data = null;
                 break;
-            case ACTION_CODE_DEBUG:
+            case debug:
                 current_output_data = null;
-                if (current_input_data!=null)
+                if (current_input_data != null)
                     current_input_data = null;
                 break;
-            /* ACTION_CODE_INIT */
+            /* init */
             default:
                 ;
         }
 
         /* Deallocating passed models */
-        if (passed_theta!=null) {
+        if (passed_theta != null) {
             for (int i = 0; i < params.num_models; i++)
                 passed_theta[i] = null;
             passed_theta = null;
         }
 
         /* Deallocating the model */
-        if (theta!=null)
+        if (theta != null)
             theta = null;
 
         /* Deallocating the structures with data */
-        if (output_data!=null)
+        if (output_data != null)
             output_data = null;
 
-        if (input_data!=null)
+        if (input_data != null)
             input_data = null;
 
-        if (extra_data!=null)
+        if (extra_data != null)
             extra_data = null;
 
         /* Deallocating the structure with parameters */
@@ -476,12 +474,12 @@ public class NHMM {
     }
 
     void RunEvaluate(Data output_data, int option, PrintStream out) {
-        double[]mean;
-        double[][][]cov;
-        double[][]pers;
-        int[][]dist;
-        double[][]MI;
-        double[][]lo;
+        double[] mean;
+        double[][][] cov;
+        double[][] pers;
+        int[][] dist;
+        double[][] MI;
+        double[][] lo;
 
         int dim;
 
@@ -556,7 +554,7 @@ public class NHMM {
 
                 for (int i = 0; i < dim; i++) {
                     for (int j = 0; j < output_data.sequence[0].seq_length /* !!! !!! */;
-                         j++ )
+                         j++)
                         out.format("%d\t", dist[i][j]);
                     out.format("\n");
                 }
@@ -572,7 +570,7 @@ public class NHMM {
 
                 for (int i = 0; i < dim; i++) {
                     for (int j = 0; j < output_data.sequence[0].seq_length /* !!! !!! */;
-                         j++ )
+                         j++)
                         out.format("%d\t", dist[i][j]);
                     out.format("\n");
                 }
@@ -645,8 +643,8 @@ public class NHMM {
 
         /* !!! Determining whether to run regular EM or EM-MCMC !!! */
         sum = 0;
-        for (int i = 0; i < output. num_seqs; i++)
-            sum += output. sequence[i].num_missing_discrete_entries;
+        for (int i = 0; i < output.num_seqs; i++)
+            sum += output.sequence[i].num_missing_discrete_entries;
 
         /* Checking whether initial conditions have been passed */
         if (passed_theta != null) {
@@ -669,7 +667,7 @@ public class NHMM {
 
                 /* Updating the best model */
                 if (num_failed == prev_num_failed) { /* Run finished ok */
-                    if (final_theta==null)
+                    if (final_theta == null)
                         final_theta = temp_theta;
                     else if (temp_theta.ll < final_theta.ll) {
                         final_theta = temp_theta;
@@ -698,7 +696,6 @@ public class NHMM {
                     temp_theta.InitializeByEM(output, input);
                     break;
                 default:
-                    ;
             }
 
             /* Learning the parameters */
@@ -736,7 +733,7 @@ public class NHMM {
         } /* All runs failed */
 
         /* Deallocating the model */
-        if (final_theta!=null)
+        if (final_theta != null)
             final_theta = null;
 
     }
@@ -770,7 +767,7 @@ public class NHMM {
                             params.output_data_filename);
                 }
                 output_data = new Data(params.num_data_seqs, "data\0", true);
-                if (params.length_data_seq!=null)
+                if (params.length_data_seq != null)
                     output_data.ReadDataDistinct(data_file, 0, params.num_data_seqs,
                             params.length_data_seq, params.output_datum);
                 else
@@ -838,7 +835,7 @@ public class NHMM {
             output_stream = System.out;
         } /* No output file provided -- outputting results to the screen */
 
-        if (params.action != ACTION_CODE_ANALYZE) { /* HMM model is defined */
+        if (params.action != ActionCode.analyze) { /* HMM model is defined */
             /* Initializing the model structure */
             if (params.emission == null) {
                 System.err.format("Need to have proper emission distribution defined!  Aborting.\n");
@@ -854,23 +851,21 @@ public class NHMM {
             else
                 /* Creating transition probability distribution */
                 switch (params.model_type) {
-                    case MODEL_TYPE_HMM:
+                    case hmm:
                         if (params.robust_first_state != 0)
                             theta.transition = new Distribution(DIST_CONDBERNOULLIG, params.num_states, 1);
                         else
                             theta.transition = new Distribution(DIST_CONDBERNOULLI, params.num_states, 1);
                         break;
-                    case MODEL_TYPE_MIX:
-                        theta.transition = new Distribution(DIST_BERNOULLI, params.num_states, 1);
+                    case mix:
+                        theta.transition = new Distribution(bernoulli, params.num_states, 1);
                         break;
-                    case MODEL_TYPE_NHMM:
+                    case nhmm:
                         theta.transition = new Distribution(DIST_TRANSLOGISTIC, params.num_states, params.input_dim);
                         break;
-                    case MODEL_TYPE_NMIX:
+                    case nmix:
                         theta.transition = new Distribution(DIST_LOGISTIC, params.num_states, params.input_dim);
                         break;
-                    default:
-                        ;
                 }
 
             /* Emission probability distributions */
@@ -879,7 +874,7 @@ public class NHMM {
                     theta.emission[i][j] = params.emission[i].copy();
 
             /* Reading in the model */
-            if (params.model_filename != null && params.action != ACTION_CODE_INIT) {
+            if (params.model_filename != null && params.action != ActionCode.init) {
                 model_file = new File(params.model_filename);
 
                 /* Correcting the number of models in the file */
@@ -887,23 +882,23 @@ public class NHMM {
                     switch (params.xval_type) {
                         case XVAL_NONE:
                             switch (params.action) {
-                                case ACTION_CODE_LEARN:
+                                case learn:
                                     /* Number of models is as specified */
                                     break;
-                                case ACTION_CODE_VITERBI:
-                                case ACTION_CODE_LL:
-                                case ACTION_CODE_LLTRAIN:
-                                case ACTION_CODE_SIM:
-                                case ACTION_CODE_FILLING:
-                                case ACTION_CODE_PREDICT:
+                                case viterbi:
+                                case ll:
+                                case lltrain:
+                                case sim:
+                                case filling:
+                                case predict:
                                     /* Only one model in the file */
                                     params.num_models = 1;
                                     break;
-                                case ACTION_CODE_KL:
+                                case kl:
                                     /* KL divergence -- expecting exactly two models */
                                     params.num_models = 2;
                                     break;
-                                case ACTION_CODE_DEBUG:
+                                case debug:
                                     /* Only one model in the file */
                                     params.num_models = 1;
                                     break;
@@ -913,7 +908,7 @@ public class NHMM {
                             break;
                         case XVAL_LEAVENOUT:
                             /* Determining whether the number of examples to be left out is proper */
-                            if (input_data!=null) {
+                            if (input_data != null) {
                                 if (params.number_out > (int) ceil((double) params.num_input_seqs / 2.0)) {
                                     System.err.format("Number of examples to leave out is too large.  Setting it to 1.\n");
                                     params.number_out = 1;
@@ -925,19 +920,19 @@ public class NHMM {
 
                             /* Number of models is specified by the number of cross-validated sets */
                             switch (params.action) {
-                                case ACTION_CODE_VITERBI:
-                                case ACTION_CODE_LL:
-                                case ACTION_CODE_LLTRAIN:
-                                case ACTION_CODE_SIM:
-                                case ACTION_CODE_FILLING:
-                                case ACTION_CODE_PREDICT:
-                                    if (input_data!=null)
+                                case viterbi:
+                                case ll:
+                                case lltrain:
+                                case sim:
+                                case filling:
+                                case predict:
+                                    if (input_data != null)
                                         params.num_models = params.num_input_seqs / params.number_out;
                                     else
                                         params.num_models = params.num_data_seqs / params.number_out;
                                     break;
-                                case ACTION_CODE_DEBUG:
-                                    if (input_data!=null)
+                                case debug:
+                                    if (input_data != null)
                                         params.num_models = params.num_input_seqs / params.number_out;
                                     else
                                         params.num_models = params.num_data_seqs / params.number_out;
@@ -966,13 +961,13 @@ public class NHMM {
 
         /* Determining whether all information is passed for specific action */
         switch (params.action) {
-            case ACTION_CODE_LEARN:
+            case learn:
                 if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null)
+                if (input_data != null)
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -981,13 +976,13 @@ public class NHMM {
                     }
 
                 break;
-            case ACTION_CODE_VITERBI:
+            case viterbi:
                 if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null) {
+                if (input_data != null) {
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -1001,14 +996,14 @@ public class NHMM {
                     System.exit(-1);
                 }
                 break;
-            case ACTION_CODE_LL:
-            case ACTION_CODE_LLTRAIN:
+            case ll:
+            case lltrain:
                 if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null) {
+                if (input_data != null) {
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -1022,7 +1017,7 @@ public class NHMM {
                     System.exit(-1);
                 }
                 break;
-            case ACTION_CODE_SIM:
+            case sim:
                 if (passed_theta == null) {
                     System.err.format("Action 'simulation' requires models to be passed to it. Aborting.\n");
                     System.exit(-1);
@@ -1057,13 +1052,13 @@ public class NHMM {
                     output_data = null;
                 }
                 break;
-            case ACTION_CODE_FILLING:
+            case filling:
                 if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null) {
+                if (input_data != null) {
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -1077,13 +1072,13 @@ public class NHMM {
                     System.exit(-1);
                 }
                 break;
-            case ACTION_CODE_PREDICT:
+            case predict:
                 if (output_data != null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null) {
+                if (input_data != null) {
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -1097,13 +1092,13 @@ public class NHMM {
                     System.exit(-1);
                 }
                 break;
-            case ACTION_CODE_DEBUG:
+            case debug:
                 if (output_data == null) { /* No data provided */
                     System.err.format("No data sequences provided. Aborting.\n");
                     System.exit(-1);
                 } /* No data provided */
 
-                if (input_data!=null) {
+                if (input_data != null) {
                     if (params.num_data_seqs != params.num_input_seqs ||
                             params.length_data_seqs != params.length_input_seqs) {
                         /* !!! To be changed later !!! */
@@ -1117,8 +1112,8 @@ public class NHMM {
                     System.exit(-1);
                 }
                 break;
-            case ACTION_CODE_INIT:
-            case ACTION_CODE_KL:
+            case init:
+            case kl:
                 break;
             default:
                 ;
@@ -1129,54 +1124,9 @@ public class NHMM {
 
             System.out.format("Number of states: %d\n", params.num_states);
 
-            System.out.format("Type of model: ");
-            switch (params.model_type) {
-                case MODEL_TYPE_HMM:
-                    System.out.format("HMM\n");
-                    break;
-                case MODEL_TYPE_NHMM:
-                    System.out.format("NHMM\n");
-                    break;
-                case MODEL_TYPE_MIX:
-                    System.out.format("mixture\n");
-                    break;
-                case MODEL_TYPE_NMIX:
-                    System.out.format("non-homogeneous mixture\n");
-                    break;
-                default:
-                    System.out.format("unknown\n");
-            }
+            System.out.format("Type of model: %s%n", params.model_type.getDescription());
 
-            System.out.format("Action type: ");
-            switch (params.action) {
-                case ACTION_CODE_LEARN:
-                    System.out.format("parameter estimation\n");
-                    break;
-                case ACTION_CODE_VITERBI:
-                    System.out.format("best sequence calculation\n");
-                    break;
-                case ACTION_CODE_LL:
-                case ACTION_CODE_LLTRAIN:
-                    System.out.format("log-likelihood calculation\n");
-                    break;
-                case ACTION_CODE_SIM:
-                    System.out.format("simulation\n");
-                    break;
-                case ACTION_CODE_ANALYZE:
-                    System.out.format("data analysis\n");
-                    break;
-                case ACTION_CODE_FILLING:
-                    System.out.format("data analysis with hole filling\n");
-                    break;
-                case ACTION_CODE_PREDICT:
-                    System.out.format("prediction\n");
-                    break;
-                case ACTION_CODE_DEBUG:
-                    System.out.format("debugging\n");
-                    break;
-                default:
-                    System.out.format("unknown\n");
-            }
+            System.out.format("Action type: %s%n", params.action.getDescription());
 
             if (params.emission != null)
                 System.out.format("Emission distribution defined\n");
@@ -1193,7 +1143,7 @@ public class NHMM {
             System.out.format("Number of discrete-valued components: %d\n", params.num_ddata_components);
             System.out.format("Number of real-valued components: %d\n", params.num_rdata_components);
 
-            if (input_data!=null) {
+            if (input_data != null) {
                 System.out.format("Input data filename: %s\n", params.input_filename);
                 System.out.format("Number of sequences: %d\n", params.num_input_seqs);
                 System.out.format("Length of each sequence: %d\n", params.length_input_seqs);
@@ -1305,24 +1255,6 @@ public class NHMM {
 
             System.out.format("Lookahead: %d\n", params.lookahead);
         }
-        return;
-    }
-
-    static void test() {
-        //  System.out.format( "%d %d\n", isinf(POS_INF), isinf(NEG_INF) );
-        // System.out.format( "%f %f %f\n", exp(NEG_INF), log(exp(NEG_INF)), NEG_INF-NEG_INF );
-        //  System.out.format( "%f\n", exp(log(0.0)) );
-        //  System.out.format( "%f %f\n", NEG_INF, POS_INF );
-        //  System.out.format( "%f\t%f\n", gammaln( 1.0 ), gammaln( 2.0 ) );
-        //  srand48( 0 );
-        //  System.out.format( "Missing value = %f\n", missing_value( (double)0.0 ) );
-        //  System.out.format( "Infinity = %f\n", POS_INF );
-        //  System.out.format( "Ratio of inf/inf = %f\n", POS_INF/POS_INF );
-        //  System.out.format( "%f\n", 1/sqrt(2*PI*1e-200) );
-    }
-
-
-    void TestDebug(Data data, Data input_data, HMM theta, PrintStream output) {
     }
 
     int CompareDataSets(Data data1, Data data2) {

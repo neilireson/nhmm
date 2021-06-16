@@ -3,11 +3,13 @@ package uk.ac.shef.wit.nhmm;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Scanner;
 
 import static java.lang.Double.isFinite;
 import static java.lang.Double.isNaN;
 import static java.lang.Math.*;
 import static uk.ac.shef.wit.nhmm.Constants.*;
+import static uk.ac.shef.wit.nhmm.Constants.DistributionType.*;
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
 import static uk.ac.shef.wit.nhmm.Data.missing_value;
 import static uk.ac.shef.wit.nhmm.Matrix.*;
@@ -15,7 +17,7 @@ import static uk.ac.shef.wit.nhmm.Simulation.*;
 
 public class Distribution {
 
-    int type;                // Type of distribution
+    DistributionType type;                // Type of distribution
     int dim;                 // Dimension of input or the number of subcomponents
     int num_states;          // Number of states for discrete distributions
     int[] dim_index;          // Indices of components covered by the distribution
@@ -129,7 +131,7 @@ public class Distribution {
     public double maxent_epsilon;
     public double cg_epsilon;
 
-    Distribution(int d_type, int d_num_states, int d_dim) {
+    Distribution(DistributionType d_type, int d_num_states, int d_dim) {
 
         type = d_type;
         if (!(d_dim > 0)) {
@@ -147,7 +149,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i] = null;
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 dim_index = new int[dim];
                 for (int i = 0; i < dim; i++)
                     dim_index[i] = i;
@@ -748,7 +750,7 @@ public class Distribution {
                 subdist[0] = null;
                 subdist = null;
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 dim_index = null;
 
                 /* Removing mixture components */
@@ -1173,7 +1175,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     dist.subdist[0][i] = subdist[0][i].copy();
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 for (int i = 0; i < dim; i++)
                     dist.dim_index[i] = dim_index[i];
                 if (subdist != null) {
@@ -1576,7 +1578,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].Initialize(data);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Initializing Bernoulli parameters */
 //                if (BLAH) {
 //                    sum = 0.0;
@@ -2314,7 +2316,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     log_p += subdist[0][i].log_prob(datum, prev_datum);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 if (subdist != null) { /* Mixture */
                     /* !!! Assuming univariate Bernoulli !!! */
                     value_contrib = new double[num_states];
@@ -2400,8 +2402,6 @@ public class Distribution {
                     sum += exp(exp_sum[b]);
 
                 log_p = exp_sum[datum.ddata[0]] - log(sum);
-
-                exp_sum = null;
 
                 break;
             case DIST_CHOWLIU:
@@ -2791,7 +2791,8 @@ public class Distribution {
                 log_p = 0.0;
         }
 
-        return (log_p);
+        System.out.format("%f%n", log_p);
+        return log_p;
     }
 
     void probLogistic(DataPoint datum, int prev_state, double[] output) {
@@ -2869,7 +2870,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     lp -= mdl_beta * ((double) num_features[i] - 1);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 for (int i = 0; i < num_states; i++)
                     if (abs(pcount_single[i]) > COMP_THRESHOLD)
                         lp += pcount_single[i] * log_state_prob[i];
@@ -2956,7 +2957,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].WriteToFile(out);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 // out.format("%c Mapping of vector dimensions:\n", COMMENT_SYMBOL );
                 if (subdist != null) {
                     out.format("%c %d-component mixture\n", COMMENT_SYMBOL, num_states);
@@ -3341,7 +3342,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].WriteToFile2(out);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 if (subdist != null) {
                     out.format("%c %d-component mixture\n", COMMENT_SYMBOL, num_states);
                     out.format("%c Mixing probabilities:\n", COMMENT_SYMBOL);
@@ -3674,7 +3675,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].WriteToFileBare(out);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 for (int i = 0; i < num_states; i++)
                     out.format("\t%.12f", state_prob[i]);
                 out.format("\n");
@@ -3911,7 +3912,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     num += subdist[0][i].num_params();
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 num += num_states - 1;
                 if (subdist != null)
                     /* Mixture components */
@@ -4058,8 +4059,6 @@ public class Distribution {
                 /* Linear terms */
                 num += dim * (num_states - 1);
                 break;
-            default:
-                ;
         }
 
         return (num);
@@ -4079,7 +4078,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].UpdateEmissionParameters(data, prob_s, norm_const);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Univariate Bernoulli */
                 UpdateEmissionBernoulli(data, prob_s);
                 break;
@@ -4170,8 +4169,7 @@ public class Distribution {
         double ll = 0.0;
 
         for (int n = 0; n < data.num_seqs; n++)
-            for (int t = 0; t < data.sequence[n].seq_length;
-                 t++)
+            for (int t = 0; t < data.sequence[n].seq_length; t++)
                 if (t == 0)
                     ll += prob_s[n][t] * log_prob(data.sequence[n].entry[t], null);
                 else
@@ -4275,7 +4273,7 @@ public class Distribution {
                 h = null;
 
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* State probabilities */
                 for (int i = 0; i < num_states; i++) {
                     state_prob[i] = pcount_single[i];
@@ -4463,8 +4461,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) { /* For each state */
                     /* State 1 is ignored since its parameters are never updated */
                     for (int n = 0; n < input.num_seqs; n++)
-                        for (int t = 0; t < input.sequence[n].seq_length;
-                             t++) {
+                        for (int t = 0; t < input.sequence[n].seq_length; t++) {
                             if (t == 0) {
                                 gradient.lambda[i] += (Anti[i][n][t] - prob[i][0][n][t]);
                                 for (int d = 0; d < dim; d++)
@@ -4551,8 +4548,7 @@ public class Distribution {
                 for (int i = 1; i < num_states; i++) { /* For each state */
                     /* State 1 is ignored since its parameters are never updated */
                     for (int n = 0; n < input.num_seqs; n++)
-                        for (int t = 0; t < input.sequence[n].seq_length;
-                             t++) {
+                        for (int t = 0; t < input.sequence[n].seq_length; t++) {
                             if (t == 0) {
                                 gradient.lambda[i] += (Anti[i][n][t] - prob[i][0][n][t]);
                                 for (int d = 0; d < dim; d++)
@@ -5455,7 +5451,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].PostProcess();
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 if (subdist != null)
                     for (int i = 0; i < dim; i++)
                         for (int j = 0; j < num_states; j++)
@@ -5870,7 +5866,7 @@ public class Distribution {
                 break;
             case DIST_LOGISTIC:
                 /* Allocating collapsed transition distribution */
-                transition = new Distribution(DIST_BERNOULLI, num_states, 1);
+                transition = new Distribution(bernoulli, num_states, 1);
 
                 /* Retrieving the distribution values from the base transition distribution */
                 sum = 0.0;
@@ -5928,7 +5924,7 @@ public class Distribution {
                         transition.rho[i][j] = 0.0;
 
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Converting parameter values */
 
                 /* First entry in the sequence */
@@ -6661,107 +6657,35 @@ public class Distribution {
         return (exp(-(log(x) - M) * (log(x) - M) / (2.0 * S2)) / (x * sqrt(2 * PI * S2)));
     }
 
-    static Distribution ReadDistribution(File input) throws IOException {
+    static Distribution ReadDistribution(Scanner scanner) throws IOException {
         /* Reads parameters of the sub-components of the distribution and creates them */
-
-        int line_number = 0;
 
         /* Distribution */
         Distribution dist = null;
 
         /* Parameters */
-        int t, param1, param2;
+        int param1, param2;
         double mdl_prior;         // Penalty term for parameters
         double pcount = 0;            // Pseudo-count -- Dirichlet prior
 
         /* Temporary variable(s) */
-        String temp_char;
+        String token;
         int[] dim_index;
 
-        ReadFile readFile = new ReadFile(input);
-        temp_char = readFile.read_word();
-        if (temp_char.compareTo("factored") == 0)
-            t = DIST_FACTOR;
-        else if (temp_char.compareTo("independent") == 0)
-            t = DIST_ALIAS_CI;
-        else if (temp_char.compareTo("mixture-distinct") == 0)
-            t = DIST_MIXTURE;
-        else if (temp_char.compareTo("mixture-distinct-prior") == 0)
-            t = DIST_MIXTURE_PRIOR;
-        else if (temp_char.compareTo("mixture") == 0)
-            t = DIST_ALIAS_MIXTURE;
-        else if (temp_char.compareTo("mixture-prior") == 0)
-            t = DIST_ALIAS_MIXTURE_PRIOR;
-        else if (temp_char.compareTo("cl-mixture-distinct") == 0)
-            t = DIST_CLMIXTURE;
-        else if (temp_char.compareTo("cl-mixture") == 0)
-            t = DIST_ALIAS_CLMIXTURE;
-        else if (temp_char.compareTo("cl-mixture-prior") == 0)
-            t = DIST_ALIAS_CLMIXTURE_PRIOR;
-        else if (temp_char.compareTo("bernoulli") == 0)
-            t = DIST_BERNOULLI;
-        else if (temp_char.compareTo("bernoulli-prior") == 0)
-            t = DIST_BERNOULLI_PRIOR;
-        else if (temp_char.compareTo("chain-bernoulli") == 0)
-            t = DIST_CONDBERNOULLI;
-        else if (temp_char.compareTo("chain-bernoulli-prior") == 0)
-            t = DIST_CONDBERNOULLI_PRIOR;
-        else if (temp_char.compareTo("chain-bernoulli-global") == 0)
-            t = DIST_CONDBERNOULLIG;
-        else if (temp_char.compareTo("chain-bernoulli-global-prior") == 0)
-            t = DIST_CONDBERNOULLIG_PRIOR;
-        else if (temp_char.compareTo("chow-liu") == 0)
-            t = DIST_CHOWLIU;
-        else if (temp_char.compareTo("chow-liu-mdl") == 0)
-            t = DIST_CHOWLIU_MDL;
-        else if (temp_char.compareTo("chow-liu-prior") == 0)
-            t = DIST_CHOWLIU_DIR_MDL;
-        else if (temp_char.compareTo("conditional-chow-liu") == 0)
-            t = DIST_CONDCHOWLIU;
-        else if (temp_char.compareTo("conditional-chow-liu-mdl") == 0)
-            t = DIST_CONDCHOWLIU_MDL;
-        else if (temp_char.compareTo("maxent-full") == 0)
-            t = DIST_ME_BIVAR;
-        else if (temp_char.compareTo("BN-maxent") == 0)
-            t = DIST_BN_ME_BIVAR;
-        else if (temp_char.compareTo("BN-cond-maxent") == 0)
-            t = DIST_BN_CME_BIVAR;
-        else if (temp_char.compareTo("delta-exponential") == 0)
-            t = DIST_DELTAEXP;
-        else if (temp_char.compareTo("delta-gamma") == 0)
-            t = DIST_DELTAGAMMA;
-        else if (temp_char.compareTo("delta") == 0)
-            t = DIST_DIRACDELTA;
-        else if (temp_char.compareTo("exponential") == 0)
-            t = DIST_EXP;
-        else if (temp_char.compareTo("gamma") == 0)
-            t = DIST_GAMMA;
-        else if (temp_char.compareTo("log-normal") == 0)
-            t = DIST_LOGNORMAL;
-        else if (temp_char.compareTo("gaussian") == 0)
-            t = DIST_NORMAL;
-        else if (temp_char.compareTo("chain-gaussian") == 0)
-            t = DIST_NORMALCHAIN;
-        else if (temp_char.compareTo("tree-gaussian") == 0)
-            t = DIST_NORMALCL;
-        else if (temp_char.compareTo("logistic") == 0)
-            t = DIST_LOGISTIC;
-        else if (temp_char.compareTo("transition-logistic") == 0)
-            t = DIST_TRANSLOGISTIC;
-        else {
-            System.err.format("Unknown distribution type %s on line %d.  Skipping.\n", temp_char, line_number);
-            return null;
+        token = scanner.next();
+        DistributionType type;
+        try {
+            type = DistributionType.valueOf(token);
+        } catch (Exception e) {
+            throw new IOException("Unknown distribution type: " + token, e);
         }
 
-        temp_char = null;
-
-        switch (t) {
+        switch (type) {
             case DIST_FACTOR:
                 /* Product distribution (Conditional independence) */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of conditionally independent distributions must be at least 1.  Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of conditionally independent distributions must be at least 1.  Aborting.\n");
                     System.exit(-1);
                 }
 
@@ -6770,7 +6694,7 @@ public class Distribution {
                     System.out.format("%d-component product distribution\n", dist.dim);
                 }
                 for (int i = 0; i < dist.dim; i++)
-                    dist.subdist[0][i] = ReadDistribution(input);
+                    dist.subdist[0][i] = ReadDistribution(scanner);
                 dim_index = new int[param1];
                 for (int i = 0; i < param1; i++)
                     dim_index[i] = i;
@@ -6778,12 +6702,11 @@ public class Distribution {
                 dim_index = null;
 
                 break;
-            case DIST_ALIAS_CI:
+            case independent:
                 /* Conditionally independent distributions of the same type (shortcut) */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of conditionally independent distributions must be at least 1.  Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of conditionally independent distributions must be at least 1.  Aborting.\n");
                     System.exit(-1);
                 }
 
@@ -6791,7 +6714,7 @@ public class Distribution {
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-component product distribution\n", dist.dim);
                 }
-                dist.subdist[0][0] = ReadDistribution(input);
+                dist.subdist[0][0] = ReadDistribution(scanner);
                 for (int i = 1; i < dist.dim; i++)
                     dist.subdist[0][i] = dist.subdist[0][0].copy();
                 dim_index = new int[param1];
@@ -6804,18 +6727,16 @@ public class Distribution {
             case DIST_MIXTURE:
             case DIST_MIXTURE_PRIOR:
                 /* Mixture */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of components in a mixture model must be at least 1.  Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of components in a mixture model must be at least 1.  Aborting.\n");
                 }
-                dist = new Distribution(DIST_BERNOULLI, param1, 1);
+                dist = new Distribution(bernoulli, param1, 1);
 
-                if (t == DIST_MIXTURE_PRIOR) { /* Reading in the parameters for the prior */
-                    pcount = readFile.read_double();
+                if (type == DIST_MIXTURE_PRIOR) { /* Reading in the parameters for the prior */
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior for mixing probabilities of a mixture must be non-negative.  Setting them to zero.\n",
-                                line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior for mixing probabilities of a mixture must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     for (int i = 0; i < dist.num_states; i++)
@@ -6824,32 +6745,30 @@ public class Distribution {
                 } /* Reading in the parameters for the prior */
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-component mixture distribution via a multinomial distribution\n", dist.num_states);
-                    if (t == DIST_MIXTURE_PRIOR)
+                    if (type == DIST_MIXTURE_PRIOR)
                         System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
 
                 dist.subdist = new Distribution[1][];
                 dist.subdist[0] = new Distribution[dist.num_states];
                 for (int i = 0; i < dist.num_states; i++)
-                    dist.subdist[0][i] = ReadDistribution(input);
+                    dist.subdist[0][i] = ReadDistribution(scanner);
                 break;
             case DIST_ALIAS_MIXTURE:
             case DIST_ALIAS_MIXTURE_PRIOR:
                 /* Mixture of distributions of the same type (shortcut) */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of mixture components must be at least 1.  Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of mixture components must be at least 1.  Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(DIST_BERNOULLI, param1, 1);
+                dist = new Distribution(bernoulli, param1, 1);
 
-                if (t == DIST_ALIAS_MIXTURE_PRIOR) { /* Reading in the parameters for the prior */
-                    pcount = readFile.read_double();
+                if (type == DIST_ALIAS_MIXTURE_PRIOR) { /* Reading in the parameters for the prior */
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior for mixing probabilities of a mixture must be non-negative.  Setting them to zero.\n",
-                                line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior for mixing probabilities of a mixture must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     for (int i = 0; i < dist.num_states; i++)
@@ -6858,37 +6777,35 @@ public class Distribution {
                 } /* Reading in the parameters for the prior */
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-component mixture distribution defined via a multinomial distribution\n", dist.num_states);
-                    if (t == DIST_ALIAS_MIXTURE_PRIOR)
+                    if (type == DIST_ALIAS_MIXTURE_PRIOR)
                         System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
                 dist.subdist = new Distribution[1][];
                 dist.subdist[0] = new Distribution[dist.num_states];
-                dist.subdist[0][0] = ReadDistribution(input);
+                dist.subdist[0][0] = ReadDistribution(scanner);
                 for (int i = 1; i < dist.num_states; i++)
                     dist.subdist[0][i] = dist.subdist[0][0].copy();
                 break;
             case DIST_CLMIXTURE:
                 /* Tree-dependent mixture */
                 /* First parameter -- number of variables in each output node */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
                 /* !!! Assuming that each of the variables has the same range !!! */
                 /* Second parameter -- number of values for each variable */
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 2) {
-                    System.err.format("Error on line %d: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.\n");
                     System.exit(-1);
                 }
                 dist = new Distribution(DIST_CHOWLIU, param2, param1);
-                pcount = readFile.read_double();
+                pcount = scanner.nextDouble();
                 if (pcount < 0.0) {
-                    System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n", line_number);
+                    System.err.format("Error: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n");
                     pcount = 0.0;
                 }
                 /* !!! No safety checking for the priors !!! */
@@ -6902,7 +6819,7 @@ public class Distribution {
                     for (int b1 = 0; b1 < dist.num_states; b1++)
                         dist.pcount_uni[i][b1] = pcount * dist.num_states;
                 dist.pcount = pcount * dist.num_states * dist.num_states;
-                mdl_prior = readFile.read_double();
+                mdl_prior = scanner.nextDouble();
                 dist.mdl_beta = mdl_prior;
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
@@ -6912,7 +6829,7 @@ public class Distribution {
                     dist.subdist[i] = new Distribution[dist.num_states];
                 for (int i = 0; i < dist.dim; i++)
                     for (int j = 0; j < dist.num_states; j++)
-                        dist.subdist[i][j] = ReadDistribution(input);
+                        dist.subdist[i][j] = ReadDistribution(scanner);
                 dim_index = new int[param1];
                 for (int i = 0; i < param1; i++)
                     dim_index[i] = i;
@@ -6923,33 +6840,31 @@ public class Distribution {
             case DIST_ALIAS_CLMIXTURE_PRIOR:
                 /* Tree-structured mixture of distributions of the same type (shortcut) */
                 /* First parameter -- number of variables in each output node */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
                 /* !!! Assuming that each of the variables has the same range !!! */
                 /* Second parameter -- number of values for each variable */
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 2) {
-                    System.err.format("Error on line %d: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.\n");
                     System.exit(-1);
                 }
                 dist = new Distribution(DIST_CHOWLIU, param2, param1);
-                if (t == DIST_ALIAS_CLMIXTURE) {
-                    mdl_prior = readFile.read_double();
+                if (type == DIST_ALIAS_CLMIXTURE) {
+                    mdl_prior = scanner.nextDouble();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variable %d-component tree-structured mixture with MDL factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
-                } else if (t == DIST_ALIAS_CLMIXTURE_PRIOR) {
-                    pcount = readFile.read_double();
+                } else if (type == DIST_ALIAS_CLMIXTURE_PRIOR) {
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n", line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     /* !!! No safety checking for the priors !!! */
@@ -6963,7 +6878,7 @@ public class Distribution {
                         for (int b1 = 0; b1 < dist.num_states; b1++)
                             dist.pcount_uni[i][b1] = pcount * dist.num_states;
                     dist.pcount = pcount * dist.num_states * dist.num_states;
-                    mdl_prior = readFile.read_double();
+                    mdl_prior = scanner.nextDouble();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variable %d-component tree-structured mixture with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
@@ -6973,7 +6888,7 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.subdist[i] = new Distribution[dist.num_states];
                 for (int j = 0; j < dist.num_states; j++)
-                    dist.subdist[0][j] = ReadDistribution(input);
+                    dist.subdist[0][j] = ReadDistribution(scanner);
                 for (int i = 1; i < dist.dim; i++)
                     for (int j = 0; j < dist.num_states; j++)
                         dist.subdist[i][j] = dist.subdist[0][j].copy();
@@ -6983,25 +6898,23 @@ public class Distribution {
                 dist.UpdateIndex(dim_index);
                 dim_index = null;
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
             case DIST_BERNOULLI_PRIOR:
                 /* One-dimensional Bernoulli */
 
                 /* One parameter -- number of possible states */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of states for a 1-d Bernoulli distribution must be at least 1.  Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of states for a 1-d Bernoulli distribution must be at least 1.  Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(DIST_BERNOULLI, param1, 1);
+                dist = new Distribution(bernoulli, param1, 1);
 
-                if (t == DIST_BERNOULLI_PRIOR) { /* Reading in the parameters for the prior */
-                    pcount = readFile.read_double();
+                if (type == DIST_BERNOULLI_PRIOR) { /* Reading in the parameters for the prior */
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior of 1-d multinomial distribution must be non-negative.  Setting them to zero.\n",
-                                line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior of 1-d multinomial distribution must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     for (int i = 0; i < dist.num_states; i++)
@@ -7015,7 +6928,7 @@ public class Distribution {
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
                     System.out.format("Univariate %d-valued Bernoulli\n", dist.num_states);
-                    if (t == DIST_BERNOULLI_PRIOR)
+                    if (type == DIST_BERNOULLI_PRIOR)
                         System.out.format("Dirichlet prior with pseudo-counts %f\n", pcount);
                 }
                 break;
@@ -7026,14 +6939,13 @@ public class Distribution {
                 /* Conditional Bernoulli */
 
                 /* One parameter -- number of possible states */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the number of states for a conditional Bernoulli distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of states for a conditional Bernoulli distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                switch (t) {
+                switch (type) {
                     case DIST_CONDBERNOULLI:
                     case DIST_CONDBERNOULLI_PRIOR:
                         dist = new Distribution(DIST_CONDBERNOULLI, param1, 1);
@@ -7044,11 +6956,10 @@ public class Distribution {
                         break;
                 }
 
-                if (t == DIST_CONDBERNOULLI_PRIOR || t == DIST_CONDBERNOULLIG_PRIOR) { /* Reading in the parameters for the prior */
-                    pcount = readFile.read_double();
+                if (type == DIST_CONDBERNOULLI_PRIOR || type == DIST_CONDBERNOULLIG_PRIOR) { /* Reading in the parameters for the prior */
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior of 1-d conditional multinomial distribution must be non-negative.  Setting them to zero.\n",
-                                line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior of 1-d conditional multinomial distribution must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     for (int i = 0; i < dist.num_states; i++)
@@ -7062,13 +6973,13 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
-                    if (t == DIST_CONDBERNOULLI)
+                    if (type == DIST_CONDBERNOULLI)
                         System.out.format("Univariate %d-valued conditional Bernoulli\n", dist.num_states);
-                    else if (t == DIST_CONDBERNOULLIG)
+                    else if (type == DIST_CONDBERNOULLIG)
                         System.out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value\n", dist.num_states);
-                    else if (t == DIST_CONDBERNOULLI_PRIOR)
+                    else if (type == DIST_CONDBERNOULLI_PRIOR)
                         System.out.format("Univariate %d-valued conditional Bernoulli with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
-                    else if (t == DIST_CONDBERNOULLIG_PRIOR)
+                    else if (type == DIST_CONDBERNOULLIG_PRIOR)
                         System.out.format("Univariate %d-valued conditional Bernoulli with averaged first sequence value with Dirichlet prior with pseudo-counts %f\n", dist.num_states, pcount);
                 }
                 break;
@@ -7083,19 +6994,17 @@ public class Distribution {
                 /* Chow-Liu tree */
 
                 /* First parameter -- number of variables in each output node */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of variables in the Chow-Liu tree must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
                 /* !!! Assuming that each of the variables has the same range !!! */
                 /* Second parameter -- number of values for each variable */
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 2) {
-                    System.err.format("Error on line %d: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.",
-                            line_number);
+                    System.err.format("Error: the number of possible values for each variable in the Chow-Liu tree distribution must be at least 2. Aborting.");
                     System.exit(-1);
                 }
 
@@ -7104,17 +7013,17 @@ public class Distribution {
                     dist.dim_index[i] = i;
 
                 /* Priors */
-                if (t == DIST_CHOWLIU_MDL) {
-                    mdl_prior = readFile.read_double();
+                if (type == DIST_CHOWLIU_MDL) {
+                    mdl_prior = scanner.nextDouble();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variate %d-valued Chow-Liu tree with MDL prior with factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
-                } else if (t == DIST_CHOWLIU_DIR_MDL) {
-                    pcount = readFile.read_double();
+                } else if (type == DIST_CHOWLIU_DIR_MDL) {
+                    pcount = scanner.nextDouble();
                     if (pcount < 0.0) {
-                        System.err.format("Error on line %d: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n", line_number);
+                        System.err.format("Error: the pseudo-counts for Dirichlet prior for Chow-Liu tree parameters must be non-negative.  Setting them to zero.\n");
                         pcount = 0.0;
                     }
                     /* !!! No safety checking for the priors !!! */
@@ -7128,12 +7037,12 @@ public class Distribution {
                         for (int b1 = 0; b1 < dist.num_states; b1++)
                             dist.pcount_uni[i][b1] = pcount * dist.num_states;
                     dist.pcount = pcount * dist.num_states * dist.num_states;
-                    mdl_prior = readFile.read_double();
+                    mdl_prior = scanner.nextDouble();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variate %d-valued Chow-Liu tree with Dirichlet prior with %f pseudo-counts and MDL prior with factor %f\n", dist.dim, dist.num_states, pcount, dist.mdl_beta);
                     }
-                } else if (t == DIST_CHOWLIU) {
+                } else if (type == DIST_CHOWLIU) {
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variate %d-valued Chow-Liu tree\n", dist.dim, dist.num_states);
                     }
@@ -7145,19 +7054,17 @@ public class Distribution {
                 /* Conditional Chow-Liu tree */
 
                 /* First parameter -- number of variables in each output node */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of variables in the conditional Chow-Liu tree must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of variables in the conditional Chow-Liu tree must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
                 /* !!! Assuming that each of the variables has the same range !!! */
                 /* Second parameter -- number of values for each variable */
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 2) {
-                    System.err.format("Error on line %d: the number of possible values for each variable in the conditional Chow-Liu tree distribution must be at least 2. Aborting.",
-                            line_number);
+                    System.err.format("Error: the number of possible values for each variable in the conditional Chow-Liu tree distribution must be at least 2. Aborting.");
                     System.exit(-1);
                 }
 
@@ -7165,14 +7072,14 @@ public class Distribution {
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 /* MDL factor */
-                if (t == DIST_CONDCHOWLIU_MDL) {
-                    mdl_prior = readFile.read_double();
+                if (type == DIST_CONDCHOWLIU_MDL) {
+                    mdl_prior = scanner.nextDouble();
                     dist.mdl_beta = mdl_prior;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variate %d-valued conditional Chow-Liu tree with MDL prior with factor %0.6le\n",
                                 dist.dim, dist.num_states, dist.mdl_beta);
                     }
-                } else if (t == DIST_CONDCHOWLIU) {
+                } else if (type == DIST_CONDCHOWLIU) {
                     dist.mdl_beta = 0.0;
                     if (INPUT_VERBOSE) {
                         System.out.format("%d-variate %d-valued conditional Chow-Liu tree\n", dist.dim, dist.num_states);
@@ -7183,14 +7090,13 @@ public class Distribution {
                 /* Binary bivariate MaxEnt distribution */
 
                 /* First parameter -- number of stations */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of nodes in the full bivariate MaxEnt distribution must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of nodes in the full bivariate MaxEnt distribution must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 2, param1);
+                dist = new Distribution(type, 2, param1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7201,15 +7107,14 @@ public class Distribution {
                 /* Bayesian network binary bivariate MaxEnt distribution */
 
                 /* First parameter -- number of stations */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of nodes in the BN bivariate MaxEnt distribution must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of nodes in the BN bivariate MaxEnt distribution must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 2, param1);
-                mdl_prior = readFile.read_double();
+                dist = new Distribution(type, 2, param1);
+                mdl_prior = scanner.nextDouble();
                 dist.mdl_beta = mdl_prior;
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
@@ -7221,15 +7126,14 @@ public class Distribution {
                 /* Bayesian network binary bivariate conditional MaxEnt distribution */
 
                 /* First parameter -- number of stations */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of nodes in the BN bivariate conditional MaxEnt distribution must be at least 2.  Aborting\n",
-                            line_number);
+                    System.err.format("Error: the number of nodes in the BN bivariate conditional MaxEnt distribution must be at least 2.  Aborting\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 2, param1);
-                mdl_prior = readFile.read_double();
+                dist = new Distribution(type, 2, param1);
+                mdl_prior = scanner.nextDouble();
                 dist.mdl_beta = mdl_prior;
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
@@ -7239,14 +7143,13 @@ public class Distribution {
                 break;
             case DIST_DELTAEXP:
                 /* Number of components */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of components of the delta-exponential distribution must be at least 2. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of components of the delta-exponential distribution must be at least 2. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, param1, 1);
+                dist = new Distribution(type, param1, 1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7255,14 +7158,13 @@ public class Distribution {
                 break;
             case DIST_DELTAGAMMA:
                 /* Number of components */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of components of the delta-gamma distribution must be at least 2. Aborting.",
-                            line_number);
+                    System.err.format("Error: the number of components of the delta-gamma distribution must be at least 2. Aborting.");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, param1, 1);
+                dist = new Distribution(type, param1, 1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7273,9 +7175,9 @@ public class Distribution {
                 /* Dirac's delta function */
 
                 /* Location of the delta function */
-                mdl_prior = readFile.read_double();
+                mdl_prior = scanner.nextDouble();
 
-                dist = new Distribution(t, 0, 1);
+                dist = new Distribution(type, 0, 1);
 
                 /* Updating the value */
                 dist.delta_value = mdl_prior;
@@ -7288,21 +7190,21 @@ public class Distribution {
                 break;
             case DIST_EXP:
                 /* Number of components */
-                dist = new Distribution(t, 0, 1);
+                dist = new Distribution(type, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
                     System.out.format("Univariate exponential (geometric) distribution\n");
                 }
                 break;
             case DIST_GAMMA:
-                dist = new Distribution(t, 0, 1);
+                dist = new Distribution(type, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
                     System.out.format("Univariate gamma distribution\n");
                 }
                 break;
             case DIST_LOGNORMAL:
-                dist = new Distribution(t, 0, 1);
+                dist = new Distribution(type, 0, 1);
                 dist.dim_index[0] = 0;
                 if (INPUT_VERBOSE) {
                     System.out.format("Univariate log-normal distribution\n");
@@ -7312,14 +7214,13 @@ public class Distribution {
                 /* Gaussian distribution */
 
                 /* One parameter -- the dimension of the space */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the dimensionality of the Gaussian distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the dimensionality of the Gaussian distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 0, param1);
+                dist = new Distribution(type, 0, param1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7330,14 +7231,13 @@ public class Distribution {
                 /* AR-Gaussian distribution */
 
                 /* One parameter -- the dimension of the space */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the dimensionality of the AR-Gaussian distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the dimensionality of the AR-Gaussian distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 0, param1);
+                dist = new Distribution(type, 0, param1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7348,14 +7248,13 @@ public class Distribution {
                 /* Tree-structured Gaussian distribution */
 
                 /* One parameter -- the dimension of the space */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 1) {
-                    System.err.format("Error on line %d: the dimensionality of the tree-structured Gaussian distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the dimensionality of the tree-structured Gaussian distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, 0, param1);
+                dist = new Distribution(type, 0, param1);
                 for (int i = 0; i < dist.dim; i++)
                     dist.dim_index[i] = i;
                 if (INPUT_VERBOSE) {
@@ -7365,20 +7264,18 @@ public class Distribution {
             case DIST_LOGISTIC:
                 /* Logistic function */
                 /* Two parameters -- number of states and the dimension of the input space */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of states in a logistic distribution must be at least 2. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of states in a logistic distribution must be at least 2. Aborting.\n");
                     System.exit(-1);
                 }
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 1) {
-                    System.err.format("Error on line %d: the dimensionality of a logistic distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the dimensionality of a logistic distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, param1, param2);
+                dist = new Distribution(type, param1, param2);
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-dimensional %d-valued logistic\n", dist.dim, dist.num_states);
                 }
@@ -7387,61 +7284,62 @@ public class Distribution {
                 /* Trans-logistic function */
 
                 /* Two parameters -- number of states and the dimension of the input space */
-                param1 = readFile.read_long();
+                param1 = scanner.nextInt();
                 if (param1 < 2) {
-                    System.err.format("Error on line %d: the number of states in a trans-logistic distribution must be at least 2. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the number of states in a trans-logistic distribution must be at least 2. Aborting.\n");
                     System.exit(-1);
                 }
-                param2 = readFile.read_long();
+                param2 = scanner.nextInt();
                 if (param2 < 1) {
-                    System.err.format("Error on line %d: the dimensionality of a trans-logistic distribution must be at least 1. Aborting.\n",
-                            line_number);
+                    System.err.format("Error: the dimensionality of a trans-logistic distribution must be at least 1. Aborting.\n");
                     System.exit(-1);
                 }
 
-                dist = new Distribution(t, param1, param2);
+                dist = new Distribution(type, param1, param2);
                 if (INPUT_VERBOSE) {
                     System.out.format("%d-dimensional %d-valued trans-logistic\n", dist.dim, dist.num_states);
                 }
                 break;
             default:
-                System.err.format("Error on line %d: unknown distribution code: %d. Aborting.\n", line_number, t);
+                System.err.format("Error: unknown distribution code: %d. Aborting.\n", type);
                 System.exit(-1);
         }
 
-        return (dist);
+        return dist;
     }
 
     void UpdateIndex(int[] index) {
+        UpdateIndex(index, 0);
+    }
+
+    void UpdateIndex(int[] index, int startIndex) {
 
         switch (type) {
             case DIST_FACTOR:
                 /* Product distribution */
                 //FIXME
-                throw new UnsupportedOperationException("FIXME");
-//                for (int i = 0; i < dim; i++)
-//                    subdist[0][i].UpdateIndex( & index[i] );
-//                break;
-            case DIST_BERNOULLI:
+                for (int i = 0; i < dim; i++)
+                    subdist[0][i].UpdateIndex(index, startIndex + i);
+                break;
+            case bernoulli:
                 if (subdist != null)
                     /* Mixture */
                     for (int i = 0; i < num_states; i++)
-                        subdist[0][i].UpdateIndex(index);
+                        subdist[0][i].UpdateIndex(index, startIndex);
                 else
-                    dim_index[0] = index[0];
+                    dim_index[0] = index[startIndex];
                 break;
             case DIST_CHOWLIU:
-                if (subdist != null)
+                if (subdist != null) {
                     /* Mixture */
                     //FIXME
-                    throw new UnsupportedOperationException("FIXME");
-//                for (int i = 0; i < dim; i++)
-//                        for (int j = 0; j < num_states; j++)
-//                            subdist[i][j].UpdateIndex( & index[i] );
+                    for (int i = 0; i < dim; i++)
+                        for (int j = 0; j < num_states; j++)
+                            subdist[i][j].UpdateIndex(index, startIndex + i);
+                }
                 else
                     for (int i = 0; i < dim; i++)
-                        dim_index[i] = index[i];
+                        dim_index[i] = index[startIndex + i];
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -7451,7 +7349,7 @@ public class Distribution {
             case DIST_EXP:
             case DIST_GAMMA:
             case DIST_LOGNORMAL:
-                dim_index[0] = index[0];
+                dim_index[0] = index[startIndex];
                 break;
             case DIST_UNICONDMVME:
                 break;
@@ -7465,7 +7363,7 @@ public class Distribution {
             case DIST_LOGISTIC:
             case DIST_TRANSLOGISTIC:
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = index[i];
+                    dim_index[i] = index[startIndex + i];
                 break;
             default:
         }
@@ -7475,20 +7373,20 @@ public class Distribution {
     void ReadParameters(File input) throws IOException {
         /* Reads the values of parameters */
 
-        ReadFile readFile = new ReadFile(input);
+        Scanner scanner = new Scanner(input);
         switch (type) {
             case DIST_FACTOR:
                 /* Reading parameters for sub-components */
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].ReadParameters(input);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Initializing Bernoulli parameters */
                 if (subdist == null)
                     for (int i = 0; i < dim; i++)
-                        dim_index[i] = readFile.read_long();
+                        dim_index[i] = scanner.nextInt();
                 for (int i = 0; i < num_states; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     log_state_prob[i] = log(state_prob[i]);
                 if (subdist != null)
@@ -7501,18 +7399,18 @@ public class Distribution {
             case DIST_CONDBERNOULLIG:
                 /* Conditional Bernoulli distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* First sequence entry probabilities */
                 for (int i = 0; i < num_states; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     log_state_prob[i] = log(state_prob[i]);
 
                 /* Conditional probabilities */
                 for (int i = 0; i < num_states; i++)
                     for (int j = 0; j < num_states; j++)
-                        cond_state_prob[i][j] = readFile.read_double();
+                        cond_state_prob[i][j] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     for (int j = 0; j < num_states; j++)
                         log_cond_state_prob[i][j] = log(cond_state_prob[i][j]);
@@ -7521,52 +7419,52 @@ public class Distribution {
                 /* Multinomial MaxEnt distribution */
 
                 /* Number of functions */
-                dim = readFile.read_long();
+                dim = scanner.nextInt();
 
                 /* Number of features for each function */
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 /* Indices of features for functions */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                        feature_index[i][j] = scanner.nextInt();
 
                 /* Corresponding feature values */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        feature_value[i][j] = readFile.read_long();
+                        feature_value[i][j] = scanner.nextInt();
 
                 /* Weights */
                 for (int i = 0; i < dim; i++)
-                    lambda[i] = readFile.read_double();
+                    lambda[i] = scanner.nextDouble();
                 break;
             case DIST_CHOWLIU:
                 /* Chow-Liu tree */
                 if (subdist == null)
                     /* Not a mixture */
                     for (int i = 0; i < dim; i++)
-                        dim_index[i] = readFile.read_long();
+                        dim_index[i] = scanner.nextInt();
 
                 /* Marginal probabilities */
                 for (int i = 0; i < dim; i++)
                     for (int s = 0; s < num_states; s++)
-                        ind_prob[i][s] = readFile.read_double();
+                        ind_prob[i][s] = scanner.nextDouble();
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
 
                 /* Probabilities on the edges */
                 for (int i = 0; i < num_edges; i++)
                     for (int j = 0; j < num_states; j++)
                         for (int s = 0; s < num_states; s++)
-                            edge_prob[i][j][s] = readFile.read_double();
+                            edge_prob[i][j][s] = scanner.nextDouble();
 
                 if (subdist != null) { /* Mixture */
                     /* Reading mixing components */
@@ -7585,155 +7483,155 @@ public class Distribution {
             case DIST_CONDCHOWLIU:
                 /* Conditional Chow-Liu tree */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Marginal probabilities */
                 for (int i = 0; i < 2 * dim; i++)
                     for (int s = 0; s < num_states; s++)
-                        ind_prob[i][s] = readFile.read_double();
+                        ind_prob[i][s] = scanner.nextDouble();
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
 
                 /* Probabilities on the edges */
                 for (int i = 0; i < num_edges; i++)
                     for (int j = 0; j < num_states; j++)
                         for (int s = 0; s < num_states; s++)
-                            edge_prob[i][j][s] = readFile.read_double();
+                            edge_prob[i][j][s] = scanner.nextDouble();
 
                 break;
             case DIST_ME_BIVAR:
                 /* Binary full bivariate MaxEnt distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Coefficients */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < i + 1; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Normalization constant exponent */
-                det = readFile.read_double();
+                det = scanner.nextDouble();
                 break;
             case DIST_BN_ME_BIVAR:
                 /* Bayesian network binary bivariate MaxEnt distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
-
-                for (int i = 0; i < dim; i++)
-                    for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        sigma[i][j] = readFile.read_double();
+                        feature_index[i][j] = scanner.nextInt();
+
+                for (int i = 0; i < dim; i++)
+                    for (int j = 0; j < num_features[i]; j++)
+                        sigma[i][j] = scanner.nextDouble();
 
 
                 for (int i = 0; i < dim; i++)
-                    sim_order[i] = readFile.read_long();
+                    sim_order[i] = scanner.nextInt();
                 break;
             case DIST_BN_CME_BIVAR:
                 /* Bayesian network binary bivariate MaxEnt conditional distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
 
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
-
-                for (int i = 0; i < dim; i++)
-                    for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        sigma[i][j] = readFile.read_double();
+                        feature_index[i][j] = scanner.nextInt();
+
+                for (int i = 0; i < dim; i++)
+                    for (int j = 0; j < num_features[i]; j++)
+                        sigma[i][j] = scanner.nextDouble();
 
 
                 for (int i = 0; i < dim; i++)
-                    sim_order[i] = readFile.read_long();
+                    sim_order[i] = scanner.nextInt();
                 break;
             case DIST_DELTAEXP:
                 /* Delta-exponential distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Reading mixing probabilities */
                 for (int i = 0; i < num_states; i++)
-                    mix_prob[i] = readFile.read_double();
+                    mix_prob[i] = scanner.nextDouble();
 
                 /* Reading the parameters for the exponential components */
                 for (int i = 0; i < num_states - 1; i++)
-                    exp_param[i] = readFile.read_double();
+                    exp_param[i] = scanner.nextDouble();
 
                 break;
             case DIST_DELTAGAMMA:
                 /* Delta-gamma distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Reading mixing probabilities */
                 for (int i = 0; i < num_states; i++)
-                    mix_prob[i] = readFile.read_double();
+                    mix_prob[i] = scanner.nextDouble();
 
                 /* Reading the parameters for the gamma components */
                 for (int i = 0; i < num_states - 1; i++) {
-                    gamma_param1[i] = readFile.read_double();
-                    gamma_param2[i] = readFile.read_double();
+                    gamma_param1[i] = scanner.nextDouble();
+                    gamma_param2[i] = scanner.nextDouble();
                 }
                 break;
             case DIST_DIRACDELTA:
                 /* Univariate Dirac delta */
-                dim_index[0] = readFile.read_long();
+                dim_index[0] = scanner.nextInt();
                 break;
             case DIST_EXP:
                 /* Univariate exponential distribution */
-                dim_index[0] = readFile.read_long();
+                dim_index[0] = scanner.nextInt();
 
                 /* Reading the parameter */
-                exp_param1 = readFile.read_double();
+                exp_param1 = scanner.nextDouble();
 
                 break;
             case DIST_GAMMA:
                 /* Univariate gamma distribution */
-                dim_index[0] = readFile.read_long();
+                dim_index[0] = scanner.nextInt();
 
                 /* Reading in two parameters */
-                gamma1 = readFile.read_double();
-                gamma2 = readFile.read_double();
+                gamma1 = scanner.nextDouble();
+                gamma2 = scanner.nextDouble();
                 break;
             case DIST_LOGNORMAL:
                 /* Univariate gamma distribution */
-                dim_index[0] = readFile.read_long();
+                dim_index[0] = scanner.nextInt();
 
                 /* Reading in two parameters */
-                log_normal1 = readFile.read_double();
-                log_normal2 = readFile.read_double();
+                log_normal1 = scanner.nextDouble();
+                log_normal2 = scanner.nextDouble();
                 break;
             case DIST_NORMAL:
                 /* Normal distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Reading in the mean vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in the covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(sigma, dim, inv_sigma);
@@ -7742,16 +7640,16 @@ public class Distribution {
             case DIST_NORMALCHAIN:
                 /* Normal distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Reading in the first state mean vector */
                 for (int i = 0; i < dim; i++)
-                    first_mu[i] = readFile.read_double();
+                    first_mu[i] = scanner.nextDouble();
 
                 /* Reading in the first state covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        first_sigma[i][j] = readFile.read_double();
+                        first_sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(first_sigma, dim, inv_first_sigma);
@@ -7760,16 +7658,16 @@ public class Distribution {
                 /* Reading in the transformation matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        W[i][j] = readFile.read_double();
+                        W[i][j] = scanner.nextDouble();
 
                 /* Reading in translation vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in noise covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Inverting */
                 find_inv(sigma, dim, inv_sigma);
@@ -7779,54 +7677,54 @@ public class Distribution {
             case DIST_NORMALCL:
                 /* Normal distribution */
                 for (int i = 0; i < dim; i++)
-                    dim_index[i] = readFile.read_long();
+                    dim_index[i] = scanner.nextInt();
 
                 /* Reading in the mean vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in the covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(sigma, dim, inv_sigma);
                 det = find_det(sigma, dim);
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
                 break;
             case DIST_LOGISTIC:
                 /* Logistic distribution */
                 for (int s = 0; s < num_states; s++) { /* Parameters by state */
                     /* Coefficients for the constant term */
-                    lambda[s] = readFile.read_double();
+                    lambda[s] = scanner.nextDouble();
 
                     /* Coefficients for the linear term */
                     for (int i = 0; i < dim; i++)
-                        rho[s][i] = readFile.read_double();
+                        rho[s][i] = scanner.nextDouble();
                 } /* Parameters by state */
                 break;
             case DIST_TRANSLOGISTIC:
                 /* Logistic distribution with transitions */
                 for (int s = 0; s < num_states; s++) { /* Parameters by state */
                     /* Coefficients for the constant term */
-                    lambda[s] = readFile.read_double();
+                    lambda[s] = scanner.nextDouble();
 
                     /* Coefficients for the transition term */
                     for (int i = 0; i < num_states; i++)
-                        sigma[i][s] = readFile.read_double();
+                        sigma[i][s] = scanner.nextDouble();
 
                     /* Coefficients for the linear term */
                     for (int i = 0; i < dim; i++)
-                        rho[s][i] = readFile.read_double();
+                        rho[s][i] = scanner.nextDouble();
                 } /* Parameters by state */
                 break;
             default:
@@ -7840,17 +7738,17 @@ public class Distribution {
 
         /* Not reading in the dimension index */
 
-        ReadFile readFile = new ReadFile(input);
+        Scanner scanner = new Scanner(input);
         switch (type) {
             case DIST_FACTOR:
                 /* Reading parameters for sub-components */
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].ReadParameters2(input);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Initializing Bernoulli parameters */
                 for (int i = 0; i < num_states; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     log_state_prob[i] = log(state_prob[i]);
                 if (subdist != null)
@@ -7864,14 +7762,14 @@ public class Distribution {
                 /* Conditional Bernoulli distribution */
                 /* First sequence entry probabilities */
                 for (int i = 0; i < num_states; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     log_state_prob[i] = log(state_prob[i]);
 
                 /* Conditional probabilities */
                 for (int i = 0; i < num_states; i++)
                     for (int j = 0; j < num_states; j++)
-                        cond_state_prob[i][j] = readFile.read_double();
+                        cond_state_prob[i][j] = scanner.nextDouble();
                 for (int i = 0; i < num_states; i++)
                     for (int j = 0; j < num_states; j++)
                         log_cond_state_prob[i][j] = log(cond_state_prob[i][j]);
@@ -7880,47 +7778,47 @@ public class Distribution {
                 /* Multinomial MaxEnt distribution */
 
                 /* Number of functions */
-                dim = readFile.read_long();
+                dim = scanner.nextInt();
 
                 /* Number of features for each function */
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 /* Indices of features for functions */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                        feature_index[i][j] = scanner.nextInt();
 
                 /* Corresponding feature values */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        feature_value[i][j] = readFile.read_long();
+                        feature_value[i][j] = scanner.nextInt();
 
                 /* Weights */
                 for (int i = 0; i < dim; i++)
-                    lambda[i] = readFile.read_double();
+                    lambda[i] = scanner.nextDouble();
                 break;
             case DIST_CHOWLIU:
                 /* Chow-Liu tree */
                 /* Marginal probabilities */
                 for (int i = 0; i < dim; i++)
                     for (int s = 0; s < num_states; s++)
-                        ind_prob[i][s] = readFile.read_double();
+                        ind_prob[i][s] = scanner.nextDouble();
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
 
                 /* Probabilities on the edges */
                 for (int i = 0; i < num_edges; i++)
                     for (int j = 0; j < num_states; j++)
                         for (int s = 0; s < num_states; s++)
-                            edge_prob[i][j][s] = readFile.read_double();
+                            edge_prob[i][j][s] = scanner.nextDouble();
 
                 if (subdist != null) { /* Mixture */
                     /* Reading mixing components */
@@ -7941,22 +7839,22 @@ public class Distribution {
                 /* Marginal probabilities */
                 for (int i = 0; i < 2 * dim; i++)
                     for (int s = 0; s < num_states; s++)
-                        ind_prob[i][s] = readFile.read_double();
+                        ind_prob[i][s] = scanner.nextDouble();
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
 
                 /* Probabilities on the edges */
                 for (int i = 0; i < num_edges; i++)
                     for (int j = 0; j < num_states; j++)
                         for (int s = 0; s < num_states; s++)
-                            edge_prob[i][j][s] = readFile.read_double();
+                            edge_prob[i][j][s] = scanner.nextDouble();
 
                 break;
             case DIST_ME_BIVAR:
@@ -7964,69 +7862,69 @@ public class Distribution {
                 /* Coefficients */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < i + 1; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Normalization constant exponent */
-                det = readFile.read_double();
+                det = scanner.nextDouble();
                 break;
             case DIST_BN_ME_BIVAR:
                 /* Bayesian network binary bivariate MaxEnt distribution */
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                        feature_index[i][j] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
 
                 for (int i = 0; i < dim; i++)
-                    sim_order[i] = readFile.read_long();
+                    sim_order[i] = scanner.nextInt();
                 break;
             case DIST_BN_CME_BIVAR:
                 /* Bayesian network binary bivariate MaxEnt conditional distribution */
                 for (int i = 0; i < dim; i++)
-                    state_prob[i] = readFile.read_double();
+                    state_prob[i] = scanner.nextDouble();
 
                 for (int i = 0; i < dim; i++)
-                    num_features[i] = readFile.read_long();
-
-                for (int i = 0; i < dim; i++)
-                    for (int j = 0; j < num_features[i]; j++)
-                        feature_index[i][j] = readFile.read_long();
+                    num_features[i] = scanner.nextInt();
 
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < num_features[i]; j++)
-                        sigma[i][j] = readFile.read_double();
+                        feature_index[i][j] = scanner.nextInt();
+
+                for (int i = 0; i < dim; i++)
+                    for (int j = 0; j < num_features[i]; j++)
+                        sigma[i][j] = scanner.nextDouble();
 
 
                 for (int i = 0; i < dim; i++)
-                    sim_order[i] = readFile.read_long();
+                    sim_order[i] = scanner.nextInt();
                 break;
             case DIST_DELTAEXP:
                 /* Delta-exponential distribution */
                 /* Reading mixing probabilities */
                 for (int i = 0; i < num_states; i++)
-                    mix_prob[i] = readFile.read_double();
+                    mix_prob[i] = scanner.nextDouble();
 
                 /* Reading the parameters for the exponential components */
                 for (int i = 0; i < num_states - 1; i++)
-                    exp_param[i] = readFile.read_double();
+                    exp_param[i] = scanner.nextDouble();
 
                 break;
             case DIST_DELTAGAMMA:
                 /* Delta-gamma distribution */
                 /* Reading mixing probabilities */
                 for (int i = 0; i < num_states; i++)
-                    mix_prob[i] = readFile.read_double();
+                    mix_prob[i] = scanner.nextDouble();
 
                 /* Reading the parameters for the gamma components */
                 for (int i = 0; i < num_states - 1; i++) {
-                    gamma_param1[i] = readFile.read_double();
-                    gamma_param2[i] = readFile.read_double();
+                    gamma_param1[i] = scanner.nextDouble();
+                    gamma_param2[i] = scanner.nextDouble();
                 }
                 break;
             case DIST_DIRACDELTA:
@@ -8034,31 +7932,31 @@ public class Distribution {
             case DIST_EXP:
                 /* Univariate exponential distribution */
                 /* Reading the parameter */
-                exp_param1 = readFile.read_double();
+                exp_param1 = scanner.nextDouble();
 
                 break;
             case DIST_GAMMA:
                 /* Univariate gamma distribution */
                 /* Reading in two parameters */
-                gamma1 = readFile.read_double();
-                gamma2 = readFile.read_double();
+                gamma1 = scanner.nextDouble();
+                gamma2 = scanner.nextDouble();
                 break;
             case DIST_LOGNORMAL:
                 /* Univariate gamma distribution */
                 /* Reading in two parameters */
-                log_normal1 = readFile.read_double();
-                log_normal2 = readFile.read_double();
+                log_normal1 = scanner.nextDouble();
+                log_normal2 = scanner.nextDouble();
                 break;
             case DIST_NORMAL:
                 /* Normal distribution */
                 /* Reading in the mean vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in the covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(sigma, dim, inv_sigma);
@@ -8068,12 +7966,12 @@ public class Distribution {
                 /* Normal distribution */
                 /* Reading in the first state mean vector */
                 for (int i = 0; i < dim; i++)
-                    first_mu[i] = readFile.read_double();
+                    first_mu[i] = scanner.nextDouble();
 
                 /* Reading in the first state covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        first_sigma[i][j] = readFile.read_double();
+                        first_sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(first_sigma, dim, inv_first_sigma);
@@ -8082,16 +7980,16 @@ public class Distribution {
                 /* Reading in the transformation matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        W[i][j] = readFile.read_double();
+                        W[i][j] = scanner.nextDouble();
 
                 /* Reading in translation vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in noise covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Inverting */
                 find_inv(sigma, dim, inv_sigma);
@@ -8102,50 +8000,50 @@ public class Distribution {
                 /* Normal distribution with tree-structured covariance matrix */
                 /* Reading in the mean vector */
                 for (int i = 0; i < dim; i++)
-                    mu[i] = readFile.read_double();
+                    mu[i] = scanner.nextDouble();
 
                 /* Reading in the covariance matrix */
                 for (int i = 0; i < dim; i++)
                     for (int j = 0; j < dim; j++)
-                        sigma[i][j] = readFile.read_double();
+                        sigma[i][j] = scanner.nextDouble();
 
                 /* Need to find the inverse and the determinant */
                 find_inv(sigma, dim, inv_sigma);
                 det = find_det(sigma, dim);
 
                 /* Number of edges */
-                num_edges = readFile.read_long();
+                num_edges = scanner.nextInt();
 
                 /* Nodes on the edges */
                 for (int i = 0; i < num_edges; i++) {
-                    edge[i][0] = readFile.read_long();
-                    edge[i][1] = readFile.read_long();
+                    edge[i][0] = scanner.nextInt();
+                    edge[i][1] = scanner.nextInt();
                 }
                 break;
             case DIST_LOGISTIC:
                 /* Logistic distribution */
                 for (int s = 0; s < num_states; s++) { /* Parameters by state */
                     /* Coefficients for the constant term */
-                    lambda[s] = readFile.read_double();
+                    lambda[s] = scanner.nextDouble();
 
                     /* Coefficients for the linear term */
                     for (int i = 0; i < dim; i++)
-                        rho[s][i] = readFile.read_double();
+                        rho[s][i] = scanner.nextDouble();
                 } /* Parameters by state */
                 break;
             case DIST_TRANSLOGISTIC:
                 /* Logistic distribution with transitions */
                 for (int s = 0; s < num_states; s++) { /* Parameters by state */
                     /* Coefficients for the constant term */
-                    lambda[s] = readFile.read_double();
+                    lambda[s] = scanner.nextDouble();
 
                     /* Coefficients for the transition term */
                     for (int i = 0; i < num_states; i++)
-                        sigma[i][s] = readFile.read_double();
+                        sigma[i][s] = scanner.nextDouble();
 
                     /* Coefficients for the linear term */
                     for (int i = 0; i < dim; i++)
-                        rho[s][i] = readFile.read_double();
+                        rho[s][i] = scanner.nextDouble();
                 } /* Parameters by state */
                 break;
             default:
@@ -8191,7 +8089,7 @@ public class Distribution {
             log_upd_scale[n] = new double[data.sequence[n].seq_length];
 
         switch (type) {
-            case DIST_BERNOULLI:
+            case bernoulli:
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -8334,7 +8232,7 @@ public class Distribution {
         value_contrib = new double[num_states];
 
         switch (type) {
-            case DIST_BERNOULLI:
+            case bernoulli:
                 for (int t = start_index; t < data.seq_length; t++) {
                     max_value = NEG_INF;
                     for (int i = 0; i < num_states; i++) {
@@ -8510,7 +8408,7 @@ public class Distribution {
         value_contrib = new double[num_states];
 
         switch (type) {
-            case DIST_BERNOULLI:
+            case bernoulli:
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -8576,7 +8474,7 @@ public class Distribution {
     void CalculateSummaries(Data data, double[][][][] log_pb) {
 
         switch (type) {
-            case DIST_BERNOULLI:
+            case bernoulli:
                 /* Univariate probabilities */
                 break;
             case DIST_CONDBERNOULLI:
@@ -8656,7 +8554,7 @@ public class Distribution {
         log_upd_scale = null;
 
         switch (type) {
-            case DIST_BERNOULLI:
+            case bernoulli:
                 break;
             case DIST_CONDBERNOULLI:
             case DIST_CONDBERNOULLIG:
@@ -8729,7 +8627,7 @@ public class Distribution {
                 for (int i = 0; i < dim; i++)
                     subdist[0][i].Simulate(sim, prev_datum);
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 if (dim == 1) {
                     int i = generateBernoulli(state_prob, num_states);
                     if (subdist != null)
@@ -9297,7 +9195,7 @@ public class Distribution {
                 prob = null;
 
                 break;
-            case DIST_BERNOULLI:
+            case bernoulli:
                 if (dim == 1) {
                     if (subdist != null) {
                         prob = new double[num_states];

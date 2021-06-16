@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Scanner;
 
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
 
@@ -107,12 +108,12 @@ public class DataPoint {
 
     void ReadData(File input) throws IOException {
 
-        DataInputStream in = new DataInputStream(new FileInputStream(input));
+        Scanner scanner = new Scanner(input);
         for (int i = 0; i < ddim; i++)
-            ddata[i] = in.readInt();
+            ddata[i] = scanner.nextInt();
 
         for (int i = 0; i < rdim; i++)
-            rdata[i] = in.readDouble();
+            rdata[i] = scanner.nextDouble();
     }
 
 }

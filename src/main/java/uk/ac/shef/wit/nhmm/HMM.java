@@ -7,6 +7,7 @@ import java.io.PrintStream;
 import static java.lang.Double.isFinite;
 import static java.lang.Math.*;
 import static uk.ac.shef.wit.nhmm.Constants.*;
+import static uk.ac.shef.wit.nhmm.Constants.DistributionType.*;
 import static uk.ac.shef.wit.nhmm.Data.is_missing;
 import static uk.ac.shef.wit.nhmm.Data.missing_value;
 import static uk.ac.shef.wit.nhmm.Simulation.generateBernoulli;
@@ -491,7 +492,7 @@ public class HMM {
         kl[1] = 0.0;
 
         /* First verifying that we can compute KL in closed form */
-        if (transition.type == DIST_BERNOULLI || q.transition.type == DIST_BERNOULLI)
+        if (transition.type == bernoulli || q.transition.type == bernoulli)
             if (num_variables == 1 && q.num_variables == 1)
                 if (num_states == 1 && q.num_states == 1) {
                     temp_dist = new Distribution[2];
@@ -552,7 +553,7 @@ public class HMM {
         for (int i = 0; i < num_states; i++)
             log_trans[i] = new double[num_states];
 
-        if (transition.type == DIST_CONDBERNOULLI || transition.type == DIST_BERNOULLI)
+        if (transition.type == DIST_CONDBERNOULLI || transition.type == bernoulli)
             /* Calculating values of the logs of the first state or mixing parameters */
             for (int i = 0; i < num_states; i++)
                 log_first[i] = transition.log_state_prob[i];
@@ -563,7 +564,7 @@ public class HMM {
                 for (int j = 0; j < num_states; j++)
                     log_trans[i][j] = transition.log_cond_state_prob[i][j];
 
-        if (transition.type == DIST_BERNOULLI)
+        if (transition.type == bernoulli)
             /* Setting log transition values for the mixture model */
             for (int i = 0; i < num_states; i++)
                 for (int j = 0; j < num_states; j++)
@@ -747,7 +748,7 @@ public class HMM {
                         else
                             transition.probLogistic(input.sequence[n].entry[t], states[n][t - 1], prob);
                         break;
-                    case DIST_BERNOULLI:
+                    case bernoulli:
                         prob = transition.state_prob;
                         break;
                     case DIST_LOGISTIC:
@@ -813,7 +814,7 @@ public class HMM {
         for (int t = data.seq_length - 1; t >= 0; t--) { /* Simulating hidden state S_t */
             sum = 0.0;
             switch (transition.type) {
-                case DIST_BERNOULLI:
+                case bernoulli:
                     /* Homogeneous mixture model */
                     for (int i = 0; i < num_states; i++) {
                         prob[i] = exp(log_pb[0][i][index][t]) * transition.state_prob[i];
@@ -908,7 +909,7 @@ public class HMM {
 
                     sum = 0.0;
                     switch (transition.type) {
-                        case DIST_BERNOULLI:
+                        case bernoulli:
                             /* Mixture */
                             for (int i = 0; i < num_states; i++) {
                                 prob[i] = exp(log_pb[0][i][n][t]) * transition.state_prob[i];

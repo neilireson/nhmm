@@ -75,8 +75,6 @@ public class Envelope {
 
         /* Deallocating the data */
         output_data = null;
-
-        return;
     }
 
     static void RunHoleData(Data output_data, Data input_data, HMM theta, PrintStream out, int hole_type) {
